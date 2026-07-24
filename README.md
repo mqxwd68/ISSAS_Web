@@ -1,11 +1,11 @@
-# ISSAS Web
+# Interactive SAM2-based Smart Annotation System (ISSAS) Web
 
 <p align="center">
-  <img src="ISSAS_web.png" alt="ISSAS Web logo" width="520">
+  <img src="ISSAS_web.png" alt="ISSAS Web logo" width="100%">
 </p>
 
 ISSAS Web is the browser-based version of the **Interactive SAM2-based Smart
-Annotation System (ISSAS)** for Gastro28. It contains:
+Annotation System (ISSAS)** for [Gastro28](https://github.com/mqxwd68/ISSAS). It contains:
 
 - a spatial mask annotation interface powered by SAM2;
 - a temporal workflow annotation interface for phase intervals;
