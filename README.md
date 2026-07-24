@@ -113,6 +113,8 @@ selected. The annotation draft remains in that browser's local storage.
 3. Add positive/negative points or draw a bounding box.
 4. Refine or propagate the mask through the frame sequence.
 5. Save the masks and YOLO annotations to a local output folder.
+Users can interactively perform annotation following the guidance shown below, which includes three modes of operation: fully automatic, semi-automatic, and manual.
+<img src="imgs/img6.png" alt="" align="up"/>
 
 ## Basic temporal workflow
 
