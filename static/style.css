@@ -25,10 +25,12 @@ html,body{height:100%}
 body{
   margin:0; background:var(--bg); color:var(--text);
   font-family:var(--sans); font-size:13px;
-  display:grid; grid-template-rows:auto 1fr auto; height:100vh; overflow:hidden;
+  display:grid; grid-template-rows:auto 1fr var(--bottom-h,auto); height:100vh; overflow:hidden;
   -webkit-font-smoothing:antialiased;
 }
 .mono{font-family:var(--mono)}
+/* with the bar hidden, the sized third track would otherwise leave a dead band */
+body.no-bottom{grid-template-rows:auto 1fr}
 .muted{color:var(--muted)}
 .hidden{display:none !important}
 
@@ -80,16 +82,74 @@ body{
 .badge-sim{color:var(--amber); background:rgba(255,180,84,.1); border-color:#7a5a24}
 
 /* ---------- Workspace ---------- */
+/* Column widths live in CSS vars so the drag handles can rewrite them cheaply.
+   Collapsed panels are display:none, so each collapse state needs its own
+   template — otherwise the surviving children would slide into the wrong tracks. */
 .workspace{
+  position:relative;
   flex:1; min-width:0;
-  display:grid; grid-template-columns:236px 1fr 268px; gap:12px;
+  display:grid; grid-template-columns:var(--left-w,236px) 1fr var(--right-w,268px); gap:12px;
   padding:12px; min-height:0; overflow:hidden;
 }
+body.no-left  .workspace{grid-template-columns:1fr var(--right-w,268px)}
+body.no-right .workspace{grid-template-columns:var(--left-w,236px) 1fr}
+body.no-left.no-right .workspace{grid-template-columns:1fr}
+body.no-left  .panel-left,
+body.no-right .panel-right,
+body.no-bottom .bottombar{display:none}
+body.no-left #gutterL, body.no-right #gutterR{display:none}
+
+/* Drag handles: absolutely placed inside the 12px grid gaps, so the grid
+   template stays a clean 3 columns. */
+.gutter{
+  position:absolute; top:12px; bottom:12px; width:11px; z-index:6;
+  cursor:col-resize; touch-action:none;
+}
+#gutterL{left:calc(var(--left-w,236px) + 12px)}
+#gutterR{right:calc(var(--right-w,268px) + 12px)}
+.gutter::after{
+  content:''; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  width:2px; height:40px; border-radius:2px; background:var(--line); transition:background .12s,height .12s;
+}
+.gutter:hover::after,.gutter.dragging::after{background:var(--accent); height:64px}
+.gutter-h{
+  position:absolute; left:0; right:0; top:0; height:9px; z-index:6;
+  cursor:row-resize; touch-action:none;
+}
+.gutter-h::after{
+  content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  height:2px; width:44px; border-radius:2px; background:var(--line); transition:background .12s,width .12s;
+}
+.gutter-h:hover::after,.gutter-h.dragging::after{background:var(--accent); width:84px}
+/* while dragging, stop the canvas stealing the pointer or selecting text */
+body.resizing{user-select:none}
+body.resizing .viewport{pointer-events:none}
+
+/* panel hide buttons */
+.head-x{
+  border:none; background:transparent; color:var(--muted-2); cursor:pointer;
+  font-size:12px; line-height:1; padding:2px 4px; border-radius:5px; font-family:var(--sans);
+  transition:color .12s,background .12s;
+}
+.head-x:hover{color:var(--danger); background:var(--panel-2)}
+.head-x-solo{flex:none; align-self:center}
+
+/* topbar panel toggles */
+.panel-toggles{display:flex; gap:3px; padding:2px; border:1px solid var(--line);
+  border-radius:var(--radius-sm); background:var(--panel)}
+.pt-btn{
+  width:26px; height:22px; display:flex; align-items:center; justify-content:center;
+  border:none; border-radius:6px; background:transparent; color:var(--muted-2);
+  font-size:12px; line-height:1; cursor:pointer; transition:color .12s,background .12s;
+}
+.pt-btn:hover{background:var(--panel-2); color:var(--text)}
+.pt-btn.on{color:var(--accent)}
 .panel{
   background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
   padding:14px; display:flex; flex-direction:column; min-height:0; overflow:hidden;
 }
 .panel-head{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
   font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted);
   margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid var(--line-soft);
 }
@@ -212,19 +272,24 @@ body{
 
 /* ---------- Bottom bar ---------- */
 .bottombar{
+  position:relative;
   display:flex; align-items:center; gap:16px; padding:8px 16px;
   background:linear-gradient(0deg,#12161b,#0e1216); border-top:1px solid var(--line);
+  overflow:hidden;              /* drag-shrinking clips rather than reflowing */
 }
 .bottom-main{flex:1; min-width:0; display:flex; flex-direction:column; gap:8px}
 .nav{display:flex; align-items:center; gap:8px; min-width:0}
 .frame-slider{flex:1; min-width:120px; max-width:640px}
 
-/* keycap legend (figure-4 style) */
-.legend{display:flex; flex-wrap:wrap; gap:5px 13px; align-items:center}
-.kc{display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:11px; white-space:nowrap}
-.kc .cap{display:inline-flex; align-items:center; justify-content:center; min-width:19px; height:19px;
-  padding:0 5px; border-radius:6px; background:var(--panel-2); border:1px solid var(--line);
-  color:var(--text); font-family:var(--mono); font-size:10.5px; font-weight:700; line-height:1}
+/* keycap legend — one line always: wrapping to a second row would push the
+   canvas up and change the layout on smaller screens */
+.legend{display:flex; flex-wrap:nowrap; gap:0 9px; align-items:center;
+  min-width:0; overflow:hidden}
+.kc{display:inline-flex; align-items:center; gap:4px; color:var(--muted); font-size:10px;
+  white-space:nowrap; flex:none}
+.kc .cap{display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px;
+  padding:0 4px; border-radius:5px; background:var(--panel-2); border:1px solid var(--line);
+  color:var(--text); font-family:var(--mono); font-size:9.5px; font-weight:700; line-height:1}
 
 .minimap-wrap{
   width:172px; height:56px; border:1px solid var(--line); border-radius:8px;
@@ -493,6 +558,14 @@ input[type=range]::-moz-range-thumb{ width:14px; height:14px; border-radius:50%;
 .review-refine .dir-row .rselect{min-width:120px}
 
 @media (max-width:1100px){
-  .workspace{grid-template-columns:200px 1fr 232px}
+  /* narrower defaults, but still var-driven so drag-resize and collapse keep working */
+  body{--left-w:200px; --right-w:232px}
   .session .path-input{width:200px}
+}
+/* chips dropped by fitLegend() when the row would not fit on one line */
+.kc-off{display:none !important}
+@media (max-width:1180px){
+  .legend .kc{font-size:9.5px}
+  .legend{gap:0 7px}
+  .minimap-wrap{width:120px}
 }

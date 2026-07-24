@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ISSAS — Interactive Annotation</title>
-  <link rel="stylesheet" href="/static/style.css?v=20260722d" />
+  <link rel="stylesheet" href="/static/style.css?v=20260722e" />
 </head>
 <body>
   <!-- ===== Top bar ===== -->
@@ -24,6 +24,12 @@
       <label class="user-field" style="display:none" title="Username used for save paths (<user>/<case>/masks) and Review">
         <span>user</span><input id="userField" class="path-input tiny" spellcheck="false" />
       </label>
+      <div class="panel-toggles" role="group" aria-label="Panels">
+        <button id="tglLeft" class="pt-btn on" title="Objects panel  ([)">◧</button>
+        <button id="tglBottom" class="pt-btn on" title="Bottom bar  (\)">▤</button>
+        <button id="tglRight" class="pt-btn on" title="Tools panel  (])">◨</button>
+      </div>
+      <button id="fsBtn" class="btn small" title="Fullscreen (Ctrl+F)">⛶ <span id="fsLabel">Full</span></button>
       <a href="/workflow" target="_blank" rel="noopener" class="btn small workflow-link" title="Open temporal workflow annotation">Workflow</a>
       <button id="reviewBtn" class="btn small">Review</button>
       <span id="modeBadge" class="badge badge-muted">no session</span>
@@ -77,7 +83,7 @@
           <div class="setup-warn mono">Changing classes or model resets the current annotations.</div>
         </div>
       </div>
-      <div class="panel-head">Objects</div>
+      <div class="panel-head">Objects<button id="collapseLeft" class="head-x" title="Hide panel  ([)">✕</button></div>
       <div class="actions">
         <button id="addObjBtn" class="btn btn-accent block">+ Add object</button>
         <div class="btn-split">
@@ -116,7 +122,7 @@
 
     <!-- Right: tools -->
     <aside class="panel panel-right">
-      <div class="panel-head">Tools</div>
+      <div class="panel-head">Tools<button id="collapseRight" class="head-x" title="Hide panel  (])">✕</button></div>
 
       <div class="tool-group">
         <div class="group-label">Visualization</div>
@@ -179,11 +185,16 @@
         <label class="switch" style="padding:6px 0"><span>Save SAM-raw folder</span><input type="checkbox" id="exportSamRaw" checked /><i></i></label>
       </div>
     </aside>
+
+    <!-- drag handles sitting in the grid gaps; hidden when their panel is collapsed -->
+    <div id="gutterL" class="gutter" title="Drag to resize · double-click to reset"></div>
+    <div id="gutterR" class="gutter" title="Drag to resize · double-click to reset"></div>
   </main>
   </div>
 
   <!-- ===== Bottom bar: frame nav + shortcut legend + minimap ===== -->
   <footer class="bottombar">
+    <div id="gutterB" class="gutter-h" title="Drag to resize · double-click to reset"></div>
     <div class="bottom-main">
       <div class="nav">
         <button id="prevBtn" class="btn small">⬅ Prev</button>
@@ -193,29 +204,31 @@
         <input id="jumpInput" class="path-input tiny" placeholder="jump" spellcheck="false" />
         <button id="jumpBtn" class="btn small">Go</button>
       </div>
-      <div class="legend">
-        <span class="kc"><span class="cap">L</span>point</span>
-        <span class="kc"><span class="cap">R</span>neg</span>
-        <span class="kc"><span class="cap">⌃</span>drag box</span>
-        <span class="kc"><span class="cap">⌃</span>scroll zoom</span>
-        <span class="kc"><span class="cap">Space</span>drag&nbsp;=&nbsp;pan</span>
-        <span class="kc"><span class="cap">A</span><span class="cap">D</span>frames</span>
-        <span class="kc"><span class="cap">W</span><span class="cap">S</span>objects</span>
-        <span class="kc"><span class="cap">B</span>brush</span>
-        <span class="kc"><span class="cap">T</span>hide</span>
-        <span class="kc"><span class="cap">Y</span>hide all</span>
-        <span class="kc"><span class="cap">G</span>gaussian</span>
-        <span class="kc"><span class="cap">F</span>morph</span>
-        <span class="kc"><span class="cap">H</span>components</span>
-        <span class="kc"><span class="cap">R</span>reset</span>
-        <span class="kc"><span class="cap">Q</span>import</span>
-        <span class="kc"><span class="cap">⌃Z</span>undo</span>
-        <span class="kc"><span class="cap">⌃S</span>save</span>
+      <div id="legend" class="legend">
+        <span class="kc" data-pri="2"><span class="cap">L</span>point</span>
+        <span class="kc" data-pri="2"><span class="cap">R</span>neg</span>
+        <span class="kc" data-pri="3"><span class="cap">⌃</span>box</span>
+        <span class="kc" data-pri="3"><span class="cap">⌃</span>zoom</span>
+        <span class="kc" data-pri="3"><span class="cap">Space</span>pan</span>
+        <span class="kc" data-pri="0"><span class="cap">A</span><span class="cap">D</span>frame</span>
+        <span class="kc" data-pri="0"><span class="cap">W</span><span class="cap">S</span>obj</span>
+        <span class="kc" data-pri="0"><span class="cap">B</span>brush</span>
+        <span class="kc" data-pri="1"><span class="cap">T</span>hide</span>
+        <span class="kc" data-pri="2"><span class="cap">Y</span>all</span>
+        <span class="kc" data-pri="1"><span class="cap">G</span>gauss</span>
+        <span class="kc" data-pri="1"><span class="cap">F</span>morph</span>
+        <span class="kc" data-pri="1"><span class="cap">H</span>comp</span>
+        <span class="kc" data-pri="2"><span class="cap">R</span>reset</span>
+        <span class="kc" data-pri="0"><span class="cap">Q</span>import</span>
+        <span class="kc" data-pri="0"><span class="cap">⌃Z</span>undo</span>
+        <span class="kc" data-pri="0"><span class="cap">⌃S</span>save</span>
+        <span class="kc" data-pri="3"><span class="cap">⌃F</span>full</span>
       </div>
     </div>
     <div class="minimap-wrap">
       <canvas id="minimap" class="minimap"></canvas>
     </div>
+    <button id="collapseBottom" class="head-x head-x-solo" title="Hide bottom bar  (\)">✕</button>
   </footer>
 
   <!-- save success flash -->
@@ -429,6 +442,6 @@
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="/static/app.js?v=20260722d"></script>
+  <script src="/static/app.js?v=20260722e"></script>
 </body>
 </html>

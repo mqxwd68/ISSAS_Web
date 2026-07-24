@@ -70,7 +70,24 @@ function resizeCanvas(){
   mctx.setTransform(dpr,0,0,dpr,0,0);
   render();
 }
-window.addEventListener('resize', resizeCanvas);
+
+// The viewport changes size for four reasons now: window resize, panel collapse,
+// gutter drag and fullscreen. Keep whatever image point was at the centre at the
+// centre, so zoom and position survive the change instead of drifting.
+let lastVp=[0,0];
+function onViewportResize(){
+  const vp=$('viewport');
+  const nw=vp.clientWidth, nh=vp.clientHeight;
+  if(S.W && S.scale && lastVp[0] && lastVp[1] && (nw!==lastVp[0]||nh!==lastVp[1])){
+    const ix=(lastVp[0]/2 - S.panX)/S.scale, iy=(lastVp[1]/2 - S.panY)/S.scale;
+    S.panX = nw/2 - ix*S.scale;
+    S.panY = nh/2 - iy*S.scale;
+  }
+  lastVp=[nw,nh];
+  resizeCanvas();
+}
+if(window.ResizeObserver) new ResizeObserver(onViewportResize).observe($('viewport'));
+window.addEventListener('resize', onViewportResize);
 
 // ---------- helpers ----------
 function toImg(sx, sy){ return [ (sx - S.panX)/S.scale, (sy - S.panY)/S.scale ]; }
@@ -346,6 +363,17 @@ function fitView(){
   const s=Math.min((vw-24)/S.W,(vh-24)/S.H);
   S.scale=s; S.panX=(vw-S.W*s)/2; S.panY=(vh-S.H*s)/2;
   syncZoomUI(); render();
+}
+// Fit AFTER the browser has laid the viewport out. Calling fitView() synchronously
+// at the end of a load measures a viewport that has not settled yet (panels, fonts,
+// scrollbars), which leaves the image scaled for a narrower stage and off-centre.
+function fitViewSoon(){
+  requestAnimationFrame(()=>{
+    resizeCanvas();
+    fitView();
+    lastVp=[$('viewport').clientWidth, $('viewport').clientHeight];
+    requestAnimationFrame(()=>{ fitView(); lastVp=[$('viewport').clientWidth,$('viewport').clientHeight]; });
+  });
 }
 function syncZoomUI(){
   $('zoomSlider').value=Math.round(S.scale*100);
@@ -724,7 +752,7 @@ let lastMouse=null;
 // -- open folder --
 $('openBtn').addEventListener('click', async ()=>{
   let path=$('folderPath').value.trim().replace(/\\/g,'/'); if(!path){ toast('Enter a folder path','err'); return; }
-  if(await loadFolderIntoEditor(path)){ setDefaultExportDirs(path); S.idx=0; await loadFrame(0,{force:true, noProp:true}); fitView(); toast('Loaded '+S.count+' frames','ok'); }
+  if(await loadFolderIntoEditor(path)){ setDefaultExportDirs(path); S.idx=0; await loadFrame(0,{force:true, noProp:true}); fitViewSoon(); toast('Loaded '+S.count+' frames','ok'); }
 });
 // core loader — used by Open folder, the file tree, and refine. Fully resets SAM (new case).
 async function loadFolderIntoEditor(path){
@@ -832,6 +860,126 @@ window.addEventListener('mouseup',()=>{miniDrag=false;});
 $('zoomSlider').addEventListener('input', e=> setZoom(+e.target.value/100));
 $('zoomIn').addEventListener('click', ()=>setZoom(S.scale*1.2));
 $('zoomOut').addEventListener('click', ()=>setZoom(S.scale/1.2));
+/* ---------- legend: keep it on exactly one line ----------
+   A wrapped legend makes the bottom bar taller and shoves the canvas up, so
+   instead of guessing breakpoints we measure and drop the lowest-priority
+   chips (data-pri, higher = dropped first) until the row fits.            */
+let legendChips=null;
+function fitLegend(){
+  const box=$('legend'); if(!box || !box.clientWidth) return;
+  if(!legendChips){
+    legendChips=[...box.querySelectorAll('.kc')]
+      .map((el,i)=>({el, pri:+el.dataset.pri||0, i}))
+      .sort((a,b)=> b.pri-a.pri || b.i-a.i)      // low priority first, rightmost first
+      .map(o=>o.el);
+  }
+  for(const el of legendChips) el.classList.remove('kc-off');
+  let n=0;
+  while(box.scrollWidth > box.clientWidth+1 && n<legendChips.length){
+    legendChips[n++].classList.add('kc-off');
+  }
+}
+let legendRaf=0;
+function fitLegendSoon(){
+  cancelAnimationFrame(legendRaf);
+  legendRaf=requestAnimationFrame(fitLegend);
+}
+if(window.ResizeObserver) new ResizeObserver(fitLegendSoon).observe($('legend'));
+
+/* ---------- panel layout: hide + drag-resize ----------
+   Widths and the bottom-bar height live in CSS vars; collapse states are body
+   classes. Everything is persisted so an annotator keeps their layout.        */
+const LAYOUT_KEY='issas.layout';
+const LAYOUT_DEF={left:236, right:268, bottom:null, hideL:false, hideR:false, hideB:false};
+const LAYOUT_MIN={left:170, right:190, bottom:46};
+const LAYOUT_MAX={left:560, right:600, bottom:360};
+let Layout=Object.assign({}, LAYOUT_DEF);
+try{ const raw=localStorage.getItem(LAYOUT_KEY); if(raw) Layout=Object.assign(Layout, JSON.parse(raw)); }catch(_){}
+
+function saveLayout(){ try{ localStorage.setItem(LAYOUT_KEY, JSON.stringify(Layout)); }catch(_){} }
+function applyLayout(persist){
+  const b=document.body;
+  b.style.setProperty('--left-w',  Layout.left+'px');
+  b.style.setProperty('--right-w', Layout.right+'px');
+  b.style.setProperty('--bottom-h', Layout.bottom? Layout.bottom+'px' : 'auto');
+  b.classList.toggle('no-left',   Layout.hideL);
+  b.classList.toggle('no-right',  Layout.hideR);
+  b.classList.toggle('no-bottom', Layout.hideB);
+  $('tglLeft').classList.toggle('on',   !Layout.hideL);
+  $('tglRight').classList.toggle('on',  !Layout.hideR);
+  $('tglBottom').classList.toggle('on', !Layout.hideB);
+  if(persist!==false) saveLayout();
+}
+function togglePanel(which){
+  const k = which==='left'?'hideL' : which==='right'?'hideR' : 'hideB';
+  Layout[k]=!Layout[k]; applyLayout();
+}
+$('tglLeft').addEventListener('click',   ()=>togglePanel('left'));
+$('tglRight').addEventListener('click',  ()=>togglePanel('right'));
+$('tglBottom').addEventListener('click', ()=>togglePanel('bottom'));
+$('collapseLeft').addEventListener('click',   ()=>togglePanel('left'));
+$('collapseRight').addEventListener('click',  ()=>togglePanel('right'));
+$('collapseBottom').addEventListener('click', ()=>togglePanel('bottom'));
+
+// generic gutter drag; pointer capture keeps events coming when the cursor
+// leaves the 11px handle, which it always does
+function bindGutter(el, onMove, onReset){
+  el.addEventListener('pointerdown', e=>{
+    if(e.button!==0) return;
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    el.classList.add('dragging'); document.body.classList.add('resizing');
+    const move=ev=>{ onMove(ev); applyLayout(false); };
+    const up=()=>{
+      el.classList.remove('dragging'); document.body.classList.remove('resizing');
+      el.removeEventListener('pointermove',move);
+      el.removeEventListener('pointerup',up);
+      el.removeEventListener('pointercancel',up);
+      saveLayout();
+    };
+    el.addEventListener('pointermove',move);
+    el.addEventListener('pointerup',up);
+    el.addEventListener('pointercancel',up);
+  });
+  el.addEventListener('dblclick', ()=>{ onReset(); applyLayout(); });
+}
+bindGutter($('gutterL'),
+  ev=>{ const r=document.querySelector('.workspace').getBoundingClientRect();
+        Layout.left = clampi(Math.round(ev.clientX - r.left - 12), LAYOUT_MIN.left, LAYOUT_MAX.left); },
+  ()=>{ Layout.left = LAYOUT_DEF.left; });
+bindGutter($('gutterR'),
+  ev=>{ const r=document.querySelector('.workspace').getBoundingClientRect();
+        Layout.right = clampi(Math.round(r.right - ev.clientX - 12), LAYOUT_MIN.right, LAYOUT_MAX.right); },
+  ()=>{ Layout.right = LAYOUT_DEF.right; });
+bindGutter($('gutterB'),
+  ev=>{ Layout.bottom = clampi(Math.round(window.innerHeight - ev.clientY), LAYOUT_MIN.bottom, LAYOUT_MAX.bottom); },
+  ()=>{ Layout.bottom = null; });
+
+/* ---------- fullscreen ---------- */
+function isFullscreen(){ return !!(document.fullscreenElement||document.webkitFullscreenElement); }
+async function toggleFullscreen(){
+  try{
+    if(isFullscreen()){
+      if(document.exitFullscreen) await document.exitFullscreen();
+      else if(document.webkitExitFullscreen) document.webkitExitFullscreen();
+    }else{
+      const el=document.documentElement;
+      if(el.requestFullscreen) await el.requestFullscreen();
+      else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+      else { toast('Fullscreen not supported by this browser','err'); return; }
+    }
+  }catch(_){ toast('Fullscreen was blocked by the browser','err'); }
+}
+function syncFsBtn(){
+  const on=isFullscreen();
+  $('fsLabel').textContent = on? 'Exit' : 'Full';
+  $('fsBtn').title = (on? 'Leave fullscreen' : 'Fullscreen') + ' (Ctrl+F)';
+  $('fsBtn').classList.toggle('btn-accent', on);
+}
+$('fsBtn').addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', syncFsBtn);
+document.addEventListener('webkitfullscreenchange', syncFsBtn);
+
 $('fitBtn').addEventListener('click', fitView);
 $('oneToOneBtn').addEventListener('click', ()=>setZoom(1));
 
@@ -1038,7 +1186,7 @@ async function refineInEditor(root, cse, ann, framesDir, rid){
   S.propagation=false; $('propBtn').textContent='Propagation: OFF'; $('propBtn').classList.remove('on');
   $('reviewModal').classList.add('hidden');
   $('compareModal').classList.add('hidden'); C.open=false;
-  await loadFrame(0,{force:true, noProp:true}); fitView();
+  await loadFrame(0,{force:true, noProp:true}); fitViewSoon();
   toast(`Refining ${ann} → saves to ${rid}/${cse} (PNG)`,'ok');
 }
 $('reviewCsv').addEventListener('click',()=>downloadReview('csv'));
@@ -1620,6 +1768,9 @@ $('remSave').addEventListener('click',()=>{ $('saveReminder').classList.add('hid
 
 // -- keyboard --
 window.addEventListener('keydown',(e)=>{
+  // fullscreen first: it must work even while a path field has focus, and the
+  // browser's own Ctrl+F find bar is useless in this tool
+  if((e.ctrlKey||e.metaKey) && (e.key==='f'||e.key==='F')){ e.preventDefault(); toggleFullscreen(); return; }
   if(e.code==='Space'){ S.spaceDown=true; if(!S.brushing&&!S.dragBox) canvas.style.cursor='grab'; }
   const tag=document.activeElement.tagName;
   if(tag==='INPUT'||tag==='TEXTAREA') return;
@@ -1648,6 +1799,9 @@ window.addEventListener('keydown',(e)=>{
     case 't': { const o=S.objects.get(S.currentId); if(o){o.visible=!o.visible; rebuildObjList(); render();} break; }
     case 'y': S.vis.all=!S.vis.all; render(); break;
     case 'p': reseedFromHere(); break;
+    case '[': togglePanel('left'); break;
+    case ']': togglePanel('right'); break;
+    case '\\': togglePanel('bottom'); break;
     case 'r': { const id=S.currentId; if(id!=null){ snapshot(); S.points.delete(id); S.boxes.delete(id);
                 const o=S.objects.get(id); o.bin=new Uint8Array(S.W*S.H); invalidateTint(o); S.dirty=true; render(); } break; }
   }
@@ -1872,7 +2026,7 @@ document.addEventListener('click', ()=>$('fdContextMenu').classList.add('hidden'
 async function loadImagesHere(path){
   if(await loadFolderIntoEditor(path)){
     setDefaultExportDirs(path);
-    S.idx=0; await loadFrame(0,{force:true, noProp:true}); fitView();
+    S.idx=0; await loadFrame(0,{force:true, noProp:true}); fitViewSoon();
     setDrawer(true);
     toast('Loaded '+S.count+' frames (SAM reset)','ok');
   }
@@ -1880,6 +2034,10 @@ async function loadImagesHere(path){
 
 // ---------- init ----------
 (async function init(){
+  applyLayout(false);          // restore saved panel widths / collapse state first
+  syncFsBtn();
+  fitLegendSoon();
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(fitLegendSoon);
   resizeCanvas();
   updateImportBtns();          // restore remembered mask / prompts folders
   try{ const c=await API.get('/api/classes');
