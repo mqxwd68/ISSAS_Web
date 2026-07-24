@@ -1,0 +1,110 @@
+{
+  "description": "",
+  "tags": [],
+  "size": {
+    "height": 1080,
+    "width": 1920
+  },
+  "objects": [
+    {
+      "id": 1700611567,
+      "classId": 13956563,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:15:32.456Z",
+      "updatedAt": "2025-06-16T08:15:32.456Z",
+      "tags": [],
+      "classTitle": "Harmonic scalpel",
+      "points": {
+        "exterior": [
+          [
+            55,
+            218
+          ],
+          [
+            1319,
+            771
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700611789,
+      "classId": 13956559,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:15:38.963Z",
+      "updatedAt": "2025-06-16T08:15:38.963Z",
+      "tags": [],
+      "classTitle": "Curved grasper",
+      "points": {
+        "exterior": [
+          [
+            105,
+            2
+          ],
+          [
+            1168,
+            280
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700611895,
+      "classId": 13956561,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:15:43.446Z",
+      "updatedAt": "2025-06-16T08:15:43.446Z",
+      "tags": [],
+      "classTitle": "Straight grasper",
+      "points": {
+        "exterior": [
+          [
+            910,
+            736
+          ],
+          [
+            1722,
+            1079
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700613159,
+      "classId": 13941750,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:17:32.887Z",
+      "updatedAt": "2025-06-16T08:17:32.887Z",
+      "tags": [],
+      "classTitle": "Common hepatic artery",
+      "points": {
+        "exterior": [
+          [
+            374,
+            510
+          ],
+          [
+            1580,
+            879
+          ]
+        ],
+        "interior": []
+      }
+    }
+  ]
+}

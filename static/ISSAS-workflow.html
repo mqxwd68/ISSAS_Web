@@ -1,0 +1,1952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ISSAS-workflow</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090d0b;
+      --bg-elevated: #0f1512;
+      --panel: #131a17;
+      --panel-2: #18211d;
+      --panel-3: #1d2823;
+      --line: #29352f;
+      --line-soft: #202b26;
+      --text: #e3e9e5;
+      --muted: #8e9a93;
+      --faint: #5d6962;
+      --accent: #3de0a1;
+      --accent-strong: #1ea978;
+      --accent-ink: #04120d;
+      --danger: #ff6d73;
+      --amber: #f4bd62;
+      --cyan: #62c3d8;
+      --blue: #7c9ff0;
+      --coral: #ef8c72;
+      --pink: #d986b5;
+      --violet: #a894e8;
+      --radius: 8px;
+      --radius-sm: 6px;
+      --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 13px;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select, textarea { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .hidden { display: none !important; }
+    .mono { font-family: var(--mono); }
+    .muted { color: var(--muted); }
+
+    .app-shell { display: grid; grid-template-rows: 56px minmax(0, 1fr); height: 100%; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+      padding: 0 16px;
+      background: #101613;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 210px; }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--accent-strong);
+      border-radius: 7px;
+      color: var(--accent);
+      font: 700 15px/1 var(--mono);
+      background: rgba(61, 224, 161, .08);
+    }
+    .brand-copy { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+    .brand-name { font-weight: 800; letter-spacing: .12em; }
+    .brand-product { color: var(--accent); font: 600 11px/1 var(--mono); letter-spacing: .05em; }
+    .current-file {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+    }
+    .current-file strong { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .btn, .icon-btn {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+      transition: background .12s, border-color .12s, color .12s, transform .04s;
+    }
+    .btn { min-height: 34px; padding: 7px 11px; font-weight: 650; font-size: 12px; }
+    .btn:hover, .icon-btn:hover { background: var(--panel-3); border-color: #3b4b43; }
+    .btn:active, .icon-btn:active { transform: translateY(1px); }
+    .btn:disabled, .icon-btn:disabled { opacity: .38; cursor: not-allowed; transform: none; }
+    .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+    .btn.primary:hover { background: #58e7b2; }
+    .btn.danger { color: #ffadb0; border-color: #63343a; background: #26191b; }
+    .btn.ghost { background: transparent; }
+    .btn.compact { min-height: 29px; padding: 5px 8px; font-size: 11px; }
+    .btn.block { width: 100%; }
+    .icon-btn { width: 34px; height: 34px; padding: 0; display: inline-grid; place-items: center; font-size: 16px; }
+    .icon-btn.compact { width: 27px; height: 27px; font-size: 13px; }
+    .icon-btn.is-active { color: var(--accent); border-color: var(--accent-strong); background: rgba(61, 224, 161, .1); }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 3px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--panel);
+      font: 600 10px/1 var(--mono);
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .badge.live { color: var(--accent); border-color: var(--accent-strong); background: rgba(61, 224, 161, .08); }
+
+    .workspace {
+      --inspector-width: 354px;
+      display: grid;
+      grid-template-columns: 232px minmax(360px, 1fr) var(--inspector-width);
+      min-height: 0;
+      overflow: hidden;
+    }
+    .workspace.library-collapsed { grid-template-columns: 44px minmax(360px, 1fr) var(--inspector-width); }
+    .workspace.inspector-collapsed { --inspector-width: 44px !important; }
+    .library, .inspector { min-height: 0; background: var(--panel); }
+    .library { border-right: 1px solid var(--line); display: flex; flex-direction: column; overflow: hidden; }
+    .inspector { position: relative; border-left: 1px solid var(--line); overflow-y: auto; scrollbar-color: #33443c transparent; }
+    .workspace.library-collapsed .library-inner { display: none; }
+    .workspace.library-collapsed .library { align-items: center; }
+    .workspace.library-collapsed #libraryToggle { margin-top: 10px; }
+    .workspace.inspector-collapsed .inspector { display: flex; align-items: flex-start; justify-content: center; overflow: hidden; }
+    .workspace.inspector-collapsed .inspector > :not(#inspectorExpand) { display: none; }
+    .workspace.inspector-collapsed #inspectorExpand { display: grid !important; margin-top: 10px; }
+    .library-head, .panel-heading {
+      display: flex;
+      align-items: center;
+      min-height: 48px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .library-head, .panel-heading { justify-content: space-between; }
+    .eyebrow {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 750;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .library-inner { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+    .library-source { padding: 12px; border-bottom: 1px solid var(--line-soft); }
+    .source-row { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; min-width: 0; }
+    .source-icon { color: var(--accent); }
+    .source-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11px; }
+    .source-actions { display: grid; grid-template-columns: 1fr 34px; gap: 7px; }
+    .drop-zone {
+      margin-top: 8px;
+      padding: 10px;
+      border: 1px dashed #3b4d44;
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      text-align: center;
+      font-size: 11px;
+      transition: border-color .12s, background .12s, color .12s;
+    }
+    .drop-zone.dragging { border-color: var(--accent); color: var(--accent); background: rgba(61, 224, 161, .07); }
+    .file-summary { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 6px; }
+    .video-list { flex: 1; min-height: 0; overflow-y: auto; padding: 3px 7px 12px; }
+    .video-item {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 8px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 8px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+    }
+    .video-item:hover { background: var(--panel-2); }
+    .video-item.active { background: rgba(61, 224, 161, .09); border-color: var(--accent-strong); }
+    .video-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+    .video-item.active .video-dot { background: var(--accent); box-shadow: 0 0 0 3px rgba(61, 224, 161, .12); }
+    .video-main { min-width: 0; }
+    .video-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 650; }
+    .video-path { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font: 10px/1.2 var(--mono); }
+    .video-count { color: var(--muted); font: 10px/1 var(--mono); }
+    .library-foot { padding: 10px 12px; border-top: 1px solid var(--line-soft); color: var(--faint); font: 10px/1.4 var(--mono); }
+
+    .viewer { --transport-height: 174px; min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) var(--transport-height); background: #080b09; }
+    .video-stage { position: relative; min-height: 0; display: grid; place-items: center; overflow: hidden; }
+    video { position: absolute; inset: 0; width: 100%; height: 100%; max-height: 100%; object-fit: contain; background: #050705; }
+    .empty-state { position: relative; z-index: 1; display: grid; place-items: center; align-content: center; gap: 12px; max-width: 330px; padding: 24px; text-align: center; color: var(--muted); }
+    .empty-glyph { display: grid; place-items: center; width: 62px; height: 46px; border: 1px solid #35433c; border-radius: 8px; color: var(--accent); font-size: 23px; background: var(--bg-elevated); }
+    .empty-state strong { color: var(--text); font-size: 15px; }
+    .empty-state span { line-height: 1.5; }
+    .stage-status { position: absolute; top: 12px; left: 12px; display: flex; gap: 7px; pointer-events: none; }
+    .stage-status .badge { background: rgba(10, 15, 12, .82); backdrop-filter: blur(8px); }
+
+    .transport { position: relative; min-height: 0; overflow: hidden; border-top: 1px solid var(--line); background: #101613; padding: 10px 30px 12px; }
+    .timeline-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; }
+    .timeline-meta-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+    .time-readout { font: 600 11px/1 var(--mono); white-space: nowrap; }
+    .active-phase { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+    .timeline-wrap { position: relative; height: 34px; margin-bottom: 7px; }
+    .timeline-input { position: absolute; inset: 0; z-index: 4; width: 100%; height: 34px; margin: 0; opacity: 0; cursor: pointer; }
+    .timeline-track { position: absolute; left: 0; right: 0; top: 20px; height: 7px; border-radius: 4px; background: #28332e; overflow: hidden; }
+    .timeline-segments { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+    .timeline-segment { position: absolute; top: 0; bottom: 0; min-width: 3px; padding: 0; opacity: .85; border: 0; border-right: 1px solid rgba(0, 0, 0, .3); cursor: pointer; pointer-events: auto; }
+    .timeline-segment:hover, .timeline-segment:focus-visible { filter: brightness(1.28); opacity: 1; outline: 2px solid rgba(255, 255, 255, .78); outline-offset: 1px; }
+    .timeline-draft-selection { position: absolute; top: 0; bottom: 0; z-index: 6; min-width: 2px; border-radius: 4px; background: #f4f7f5; box-shadow: 0 0 5px rgba(255, 255, 255, .55); pointer-events: none; }
+    .timeline-draft-selection.preview { opacity: .48; }
+    .timeline-playhead { position: absolute; top: -2px; bottom: -2px; z-index: 7; width: 2px; background: #f4f7f5; box-shadow: 0 0 0 1px rgba(0, 0, 0, .45); }
+    .timeline-anchor-group {
+      position: absolute;
+      top: 0;
+      z-index: 8;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .timeline-anchor-group.end-group { flex-direction: row-reverse; }
+    .timeline-anchor {
+      position: relative;
+      min-width: 34px;
+      height: 18px;
+      padding: 0 5px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      cursor: ew-resize;
+      touch-action: none;
+      font: 750 8px/1 var(--mono);
+      letter-spacing: .04em;
+    }
+    .timeline-anchor::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 100%;
+      z-index: 2;
+      width: 2px;
+      height: 10px;
+      transform: translateX(-50%);
+      background: var(--anchor-color);
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, .28);
+      pointer-events: none;
+    }
+    .timeline-anchor::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -5px;
+      z-index: 3;
+      width: 0;
+      height: 0;
+      transform: translateX(-50%);
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 5px solid var(--anchor-color);
+      pointer-events: none;
+    }
+    .timeline-anchor.start { --anchor-color: var(--accent); border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+    .timeline-anchor.end { --anchor-color: var(--amber); border-color: var(--amber); background: var(--amber); color: #241704; }
+    .timeline-anchor.is-dragging { filter: brightness(1.12); box-shadow: 0 0 0 2px rgba(255, 255, 255, .3); }
+    .timeline-anchor-clear {
+      display: grid;
+      place-items: center;
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: 1px solid #526159;
+      border-radius: 4px;
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+      font: 700 12px/1 var(--sans);
+    }
+    .timeline-anchor-clear:hover { border-color: var(--danger); background: #321c20; color: #ffb9bc; }
+    .transport-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .transport-row .scrub-spacer { flex: 1; }
+    .transport-row > .btn, .transport-row > .icon-btn, .transport-row > .badge { flex: 0 0 auto; }
+    .speed-select { flex: 0 0 68px; min-height: 34px; width: 68px; padding: 6px 8px; }
+    .transport-divider { width: 1px; height: 24px; margin: 0 2px; background: var(--line); }
+    .shortcut-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 12px;
+      margin-top: 8px;
+      padding-top: 7px;
+      border-top: 1px solid var(--line-soft);
+      color: var(--faint);
+      font: 9px/1.35 var(--mono);
+    }
+    .shortcut-legend span { white-space: nowrap; }
+    .shortcut-legend kbd { color: var(--muted); font: 650 9px/1.35 var(--mono); }
+    .viewer.transport-collapsed { --transport-height: 42px !important; }
+    .viewer.transport-collapsed .transport { padding: 6px 14px; overflow: hidden; }
+    .viewer.transport-collapsed .timeline-meta { height: 100%; margin: 0; }
+    .viewer.transport-collapsed .timeline-wrap,
+    .viewer.transport-collapsed .transport-row,
+    .viewer.transport-collapsed .shortcut-legend,
+    .viewer.transport-collapsed #transportResizer { display: none; }
+
+    .resize-handle {
+      position: absolute;
+      z-index: 8;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--faint);
+      cursor: col-resize;
+      touch-action: none;
+    }
+    .resize-handle::after { content: ""; position: absolute; border-radius: 3px; background: #42534b; opacity: .65; transition: opacity .12s, background .12s; }
+    .resize-handle:hover::after, .resize-handle:focus-visible::after { opacity: 1; background: var(--accent); }
+    .inspector-resizer { left: 0; top: 0; bottom: 0; width: 8px; }
+    .inspector-resizer::after { left: 2px; top: 45%; width: 3px; height: 48px; }
+    .transport-resizer { left: 0; right: 0; top: 0; height: 8px; cursor: row-resize; }
+    .transport-resizer::after { left: calc(50% - 24px); top: 2px; width: 48px; height: 3px; }
+    body.is-resizing { cursor: col-resize; user-select: none; }
+    body.is-resizing-vertical { cursor: row-resize; user-select: none; }
+
+    .field, .select, .textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      color: var(--text);
+    }
+    .field, .select { min-height: 34px; padding: 7px 9px; }
+    .textarea { min-height: 64px; padding: 9px; resize: vertical; line-height: 1.45; }
+    .field::placeholder, .textarea::placeholder { color: var(--faint); }
+    .field-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 650; }
+
+    .inspector-section { padding: 13px 14px; border-bottom: 1px solid var(--line-soft); }
+    .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .section-title { color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
+    .phase-map { display: grid; gap: 4px; }
+    .phase-option {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 24px 10px minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
+      min-height: 31px;
+      padding: 5px 7px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+    }
+    .phase-option:hover { background: var(--panel-2); }
+    .phase-option.selected { border-color: var(--accent-strong); background: rgba(61, 224, 161, .08); }
+    .phase-id { color: var(--muted); font: 650 10px/1 var(--mono); }
+    .phase-swatch { width: 9px; height: 9px; border-radius: 2px; }
+    .phase-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+
+    .mark-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .mark-box { padding: 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-elevated); }
+    .mark-label { display: flex; align-items: center; justify-content: space-between; color: var(--faint); font: 650 9px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    .mark-value { margin: 8px 0; overflow: hidden; color: var(--text); font: 650 15px/1 var(--mono); white-space: nowrap; }
+    .mark-box .btn { width: 100%; }
+    .form-mode-notice {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 38px;
+      margin-bottom: 10px;
+      padding: 8px 9px;
+      border: 1px solid var(--accent-strong);
+      border-radius: var(--radius-sm);
+      background: rgba(61, 224, 161, .07);
+    }
+    .form-mode-badge {
+      flex: none;
+      padding: 4px 6px;
+      border-radius: 4px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      font: 750 9px/1 var(--mono);
+      letter-spacing: .08em;
+    }
+    .form-mode-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .inspector-section.composer-editing { background: rgba(244, 189, 98, .035); box-shadow: inset 3px 0 0 var(--amber); }
+    .inspector-section.composer-editing .form-mode-notice { border-color: #8b6631; background: rgba(244, 189, 98, .09); }
+    .inspector-section.composer-editing .form-mode-badge { background: var(--amber); color: #241704; }
+    .inspector-section.composer-editing #saveIntervalBtn { border-color: var(--amber); background: var(--amber); color: #241704; }
+    .inspector-section.composer-editing #saveIntervalBtn:hover { border-color: #ffd58c; background: #ffd58c; }
+    .mode-return { color: var(--amber); border-color: #71552f; white-space: nowrap; }
+    .composer-note { margin-top: 9px; }
+    .composer-actions { display: grid; grid-template-columns: 1fr auto; gap: 7px; margin-top: 8px; }
+
+    .annotation-list { display: grid; gap: 6px; }
+    .annotation-empty { padding: 13px 8px; color: var(--faint); text-align: center; font-size: 11px; }
+    .annotation-row {
+      display: grid;
+      grid-template-columns: 4px minmax(0, 1fr) auto;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      transition: border-color .12s, background .12s;
+    }
+    .annotation-row.is-current { border-color: var(--accent-strong); background: rgba(61, 224, 161, .06); }
+    .annotation-row.is-editing { border-color: var(--amber); background: rgba(244, 189, 98, .07); box-shadow: inset 0 0 0 1px rgba(244, 189, 98, .2); }
+    .annotation-stripe { background: var(--phase-color); }
+    .annotation-body { min-width: 0; padding: 8px 8px 7px; cursor: pointer; }
+    .annotation-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .annotation-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+    .annotation-title span { flex: none; color: var(--muted); font: 600 9px/1 var(--mono); }
+    .annotation-title .editing-chip { padding: 3px 5px; border-radius: 4px; background: var(--amber); color: #241704; letter-spacing: .04em; }
+    .annotation-time { margin-top: 5px; color: var(--muted); font: 10px/1 var(--mono); }
+    .annotation-note { margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font-size: 10.5px; }
+    .annotation-actions { display: flex; align-items: center; gap: 3px; padding: 6px 6px 6px 0; }
+    .edit-toggle .edit-glyph { display: inline-block; transform: rotate(0); transition: transform .16s ease; }
+    .edit-toggle.is-active { border-color: var(--amber); background: var(--amber); color: #241704; }
+    .edit-toggle.is-active:hover { border-color: #ffd58c; background: #ffd58c; }
+    .edit-toggle.is-active .edit-glyph { transform: rotate(180deg); }
+    .summary-count { color: var(--accent); font: 650 10px/1 var(--mono); }
+    .export-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .export-path { margin-top: 8px; color: var(--faint); font: 10px/1.45 var(--mono); overflow-wrap: anywhere; }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(3, 7, 5, .76);
+      backdrop-filter: blur(5px);
+    }
+    .confirm-dialog {
+      width: min(430px, 100%);
+      overflow: hidden;
+      border: 1px solid #35473f;
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .48);
+    }
+    .confirm-head { padding: 15px 17px 11px; border-bottom: 1px solid var(--line-soft); }
+    .confirm-title { font-size: 14px; font-weight: 750; }
+    .confirm-body { padding: 15px 17px; }
+    .confirm-path {
+      display: block;
+      margin: 9px 0;
+      padding: 9px 10px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      color: var(--accent);
+      font: 600 11px/1.3 var(--mono);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .confirm-summary { color: var(--muted); line-height: 1.45; }
+    .confirm-actions { display: flex; justify-content: flex-end; gap: 7px; padding: 11px 17px 15px; }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      z-index: 30;
+      max-width: min(520px, calc(100vw - 30px));
+      transform: translate(-50%, 12px);
+      padding: 9px 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #1b2420;
+      color: var(--text);
+      box-shadow: 0 14px 38px rgba(0, 0, 0, .38);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .16s, transform .16s;
+      font-size: 12px;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .toast.error { color: #ffc0c3; border-color: #65383c; background: #2b1c1f; }
+
+    .phase-color-1 { background: var(--accent); }
+    .phase-color-2 { background: var(--cyan); }
+    .phase-color-3 { background: var(--amber); }
+    .phase-color-4 { background: var(--blue); }
+    .phase-color-5 { background: var(--coral); }
+    .phase-color-6 { background: var(--pink); }
+    .phase-color-7 { background: var(--violet); }
+
+    @media (max-width: 1180px) {
+      .workspace { --inspector-width: 326px; grid-template-columns: 206px minmax(320px, 1fr) var(--inspector-width); }
+      .workspace.library-collapsed { grid-template-columns: 44px minmax(320px, 1fr) var(--inspector-width); }
+      .brand-product { display: none; }
+      .brand { min-width: 138px; }
+    }
+    @media (max-width: 900px) {
+      body { overflow: auto; }
+      .app-shell { height: auto; min-height: 100%; grid-template-rows: auto auto; }
+      .topbar { min-height: 56px; flex-wrap: wrap; padding-block: 8px; }
+      .current-file { order: 3; flex-basis: 100%; justify-content: flex-start; padding-left: 42px; }
+      .workspace, .workspace.library-collapsed { grid-template-columns: minmax(0, 1fr); overflow: visible; }
+      .library { border-right: 0; border-bottom: 1px solid var(--line); max-height: 290px; }
+      .workspace.library-collapsed .library { min-height: 48px; align-items: stretch; }
+      .workspace.library-collapsed #libraryToggle { margin: 7px 12px; }
+      .viewer { min-height: 540px; }
+      .video-stage { min-height: 390px; }
+      .inspector { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+      .inspector-resizer { display: none; }
+      .workspace.inspector-collapsed .inspector { min-height: 48px; }
+      .phase-map { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 560px) {
+      .brand { min-width: 0; }
+      .brand-copy { gap: 5px; }
+      .brand-name { font-size: 12px; }
+      .current-file { padding-left: 0; }
+      .viewer { min-height: 460px; }
+      .video-stage { min-height: 320px; }
+      .viewer { --transport-height: 220px; }
+      .transport-row { flex-wrap: wrap; }
+      .transport-row .scrub-spacer { display: none; }
+      .phase-map { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand" aria-label="ISSAS-workflow">
+        <span class="brand-mark" aria-hidden="true">IS</span>
+        <div class="brand-copy"><span class="brand-name">ISSAS</span><span class="brand-product">WORKFLOW</span></div>
+      </div>
+      <div class="current-file">
+        <span id="draftBadge" class="badge">No video</span>
+        <strong id="currentFileName">Select a video to begin</strong>
+      </div>
+    </header>
+
+    <main id="workspace" class="workspace">
+      <aside class="library" aria-label="Video files">
+        <button id="libraryToggle" class="icon-btn hidden" type="button" title="Expand file panel" aria-label="Expand file panel">›</button>
+        <div class="library-inner">
+          <div class="library-head">
+            <span class="eyebrow">Video files</span>
+            <button id="libraryFold" class="icon-btn compact" type="button" title="Fold file panel" aria-label="Fold file panel">‹</button>
+          </div>
+          <div class="library-source">
+            <div class="source-row"><span class="source-icon" aria-hidden="true">▣</span><span id="sourceLabel" class="source-label">HTML file location</span></div>
+            <div class="source-actions">
+              <button id="openFolderBtn" class="btn block" type="button">Open working folder</button>
+              <button id="addVideosBtn" class="icon-btn" type="button" title="Add individual videos" aria-label="Add individual videos">＋</button>
+            </div>
+            <div id="dropZone" class="drop-zone">Drop video files here</div>
+            <input id="folderInput" type="file" webkitdirectory multiple hidden>
+            <input id="videoInput" type="file" accept="video/*" multiple hidden>
+          </div>
+          <div class="file-summary"><span class="eyebrow">Loaded</span><span id="fileCount" class="badge">0 videos</span></div>
+          <div id="videoList" class="video-list"></div>
+          <div class="library-foot">Drafts are retained locally for files reopened in this browser.</div>
+        </div>
+      </aside>
+
+      <section id="viewer" class="viewer" aria-label="Video annotation viewer">
+        <div class="video-stage">
+          <video id="video" preload="metadata" playsinline></video>
+          <div id="emptyState" class="empty-state">
+            <div class="empty-glyph" aria-hidden="true">▶</div>
+            <strong>No video loaded</strong>
+            <span>Open a working folder or add video files from the file panel.</span>
+            <button id="emptyOpenBtn" class="btn primary" type="button">Open working folder</button>
+          </div>
+          <div id="stageStatus" class="stage-status hidden"><span id="resolutionBadge" class="badge"></span><span id="durationBadge" class="badge"></span></div>
+        </div>
+        <div id="transport" class="transport">
+          <button id="transportResizer" class="resize-handle transport-resizer" type="button" aria-label="Resize playback panel" title="Drag to resize playback panel"></button>
+          <div class="timeline-meta">
+            <span id="activePhase" class="active-phase">No active phase</span>
+            <span class="timeline-meta-actions">
+              <span id="timeReadout" class="time-readout">00:00:00 / 00:00:00</span>
+              <button id="transportFold" class="icon-btn compact" type="button" title="Fold playback panel" aria-label="Fold playback panel">⌄</button>
+            </span>
+          </div>
+          <div class="timeline-wrap">
+            <input id="seekInput" class="timeline-input" type="range" min="0" max="0" value="0" step="0.001" aria-label="Video position">
+            <div id="timelineTrack" class="timeline-track">
+              <div id="timelineSegments" class="timeline-segments"></div>
+              <div id="draftSelection" class="timeline-draft-selection hidden"></div>
+              <div id="timelinePlayhead" class="timeline-playhead" style="left:0"></div>
+            </div>
+            <span id="startAnchorGroup" class="timeline-anchor-group start-group hidden">
+              <button id="startAnchor" class="timeline-anchor start" type="button" title="Drag to change start" aria-label="Start anchor">START</button>
+              <button id="clearStartAnchor" class="timeline-anchor-clear" type="button" title="Delete start anchor" aria-label="Delete start anchor">×</button>
+            </span>
+            <span id="endAnchorGroup" class="timeline-anchor-group end-group hidden">
+              <button id="endAnchor" class="timeline-anchor end" type="button" title="Drag to change end" aria-label="End anchor">END</button>
+              <button id="clearEndAnchor" class="timeline-anchor-clear" type="button" title="Delete end anchor" aria-label="Delete end anchor">×</button>
+            </span>
+          </div>
+          <div class="transport-row">
+            <button id="restartBtn" class="icon-btn" type="button" title="Restart" aria-label="Restart">↺</button>
+            <button id="backTwoBtn" class="btn" type="button" title="Back two seconds">−2s</button>
+            <button id="prevFrameBtn" class="icon-btn" type="button" title="Previous frame" aria-label="Previous frame">‹</button>
+            <button id="playBtn" class="icon-btn is-active" type="button" title="Play" aria-label="Play">▶</button>
+            <button id="nextFrameBtn" class="icon-btn" type="button" title="Next frame" aria-label="Next frame">›</button>
+            <button id="forwardTwoBtn" class="btn" type="button" title="Forward two seconds">+2s</button>
+            <label class="muted" for="speedSelect">Speed</label>
+            <select id="speedSelect" class="select speed-select" aria-label="Playback speed">
+              <option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option>
+              <option value="2.5">2.5×</option><option value="3">3×</option>
+            </select>
+            <span class="transport-divider" aria-hidden="true"></span>
+            <button id="undoBtn" class="icon-btn" type="button" title="Undo interval change (Ctrl/Command+Z)" aria-label="Undo interval change" disabled>↶</button>
+            <button id="redoBtn" class="icon-btn" type="button" title="Redo interval change (Ctrl/Command+Shift+Z or Ctrl/Command+Y)" aria-label="Redo interval change" disabled>↷</button>
+            <span id="historyDepth" class="badge" title="Available undo steps">0 / 10</span>
+          </div>
+          <div class="shortcut-legend" aria-label="Keyboard shortcuts">
+            <span><kbd>Space</kbd> play/pause</span>
+            <span><kbd>S</kbd> start</span>
+            <span><kbd>E</kbd> end</span>
+            <span><kbd>← / →</kbd> frame</span>
+            <span><kbd>Shift + ← / →</kbd> ±2s</span>
+            <span><kbd>Ctrl/Cmd + Z</kbd> undo</span>
+            <span><kbd>Ctrl/Cmd + Shift + Z</kbd> or <kbd>Ctrl/Cmd + Y</kbd> redo</span>
+            <span>Focused anchor: <kbd>← / →</kbd> frame, <kbd>Shift</kbd> ±1s</span>
+          </div>
+        </div>
+      </section>
+
+      <aside id="inspector" class="inspector" aria-label="Annotation controls">
+        <button id="inspectorExpand" class="icon-btn hidden" type="button" title="Expand annotation panel" aria-label="Expand annotation panel">‹</button>
+        <button id="inspectorResizer" class="resize-handle inspector-resizer" type="button" aria-label="Resize annotation panel" title="Drag to resize annotation panel"></button>
+        <div class="panel-heading">
+          <span class="eyebrow">Temporal annotation</span>
+          <button id="inspectorFold" class="icon-btn compact" type="button" title="Fold annotation panel" aria-label="Fold annotation panel">›</button>
+        </div>
+
+        <section class="inspector-section">
+          <div class="section-head">
+            <span class="section-title">Class map</span>
+            <button id="classMapBtn" class="btn compact ghost" type="button">Replace map</button>
+            <input id="classMapInput" type="file" accept=".txt,.json,.csv" hidden>
+          </div>
+          <div id="phaseMap" class="phase-map"></div>
+        </section>
+
+        <section id="intervalComposer" class="inspector-section">
+          <div class="section-head"><span id="composerTitle" class="section-title">New interval</span><button id="cancelEditBtn" class="btn compact ghost mode-return hidden" type="button">← Back to add mode</button></div>
+          <div id="formModeNotice" class="form-mode-notice" role="status" aria-live="polite">
+            <span id="formModeBadge" class="form-mode-badge">ADD MODE</span>
+            <span id="formModeText" class="form-mode-text">Ready to create a new interval</span>
+          </div>
+          <div class="mark-grid">
+            <div class="mark-box">
+              <div class="mark-label"><span>Start</span><span>S</span></div>
+              <div id="startValue" class="mark-value">—</div>
+              <button id="markStartBtn" class="btn compact" type="button">Mark start</button>
+            </div>
+            <div class="mark-box">
+              <div class="mark-label"><span>End</span><span>E</span></div>
+              <div id="endValue" class="mark-value">—</div>
+              <button id="markEndBtn" class="btn compact" type="button">Mark end</button>
+            </div>
+          </div>
+          <div class="composer-note">
+            <label class="field-label" for="intervalNote">Interval note</label>
+            <textarea id="intervalNote" class="textarea" rows="2" placeholder="Optional observation for this phase"></textarea>
+          </div>
+          <div class="composer-actions">
+            <button id="saveIntervalBtn" class="btn primary" type="button">Add interval</button>
+            <button id="resetMarksBtn" class="icon-btn" type="button" title="Clear interval form" aria-label="Clear interval form">×</button>
+          </div>
+        </section>
+
+        <section class="inspector-section">
+          <div class="section-head"><span class="section-title">Intervals</span><span id="intervalCount" class="summary-count">0</span></div>
+          <div id="annotationList" class="annotation-list"></div>
+        </section>
+
+        <section class="inspector-section">
+          <label class="field-label" for="videoNote">Video note</label>
+          <textarea id="videoNote" class="textarea" rows="3" placeholder="Optional note for the complete video"></textarea>
+        </section>
+
+        <section class="inspector-section">
+          <div class="section-head"><span class="section-title">Annotation file</span><span id="exportName" class="badge">—</span></div>
+          <div class="export-actions">
+            <button id="importBtn" class="btn" type="button">Import CSV</button>
+            <button id="exportBtn" class="btn primary" type="button">Export CSV</button>
+          </div>
+          <div id="exportPath" class="export-path">Download filename: &lt;video_id&gt;.csv · place in ann/</div>
+          <input id="csvInput" type="file" accept=".csv,text/csv" hidden>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <div id="folderConfirm" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="folderConfirmTitle">
+    <div class="confirm-dialog">
+      <div class="confirm-head"><div id="folderConfirmTitle" class="confirm-title">Open this working folder?</div></div>
+      <div class="confirm-body">
+        <span id="folderConfirmPath" class="confirm-path"></span>
+        <div id="folderConfirmSummary" class="confirm-summary"></div>
+      </div>
+      <div class="confirm-actions">
+        <button id="folderConfirmCancel" class="btn ghost" type="button">Cancel</button>
+        <button id="folderConfirmOpen" class="btn primary" type="button">Load videos</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const DEFAULT_PHASES = [
+        { id: 1, name: 'Duodenum transection' },
+        { id: 2, name: 'Hepatic artery exposure' },
+        { id: 3, name: 'Ligament incision' },
+        { id: 4, name: 'Right gastric division' },
+        { id: 5, name: 'Hepatic artery dissection' },
+        { id: 6, name: 'Common hepatic dissection' },
+        { id: 7, name: 'Coronary vein division' }
+      ];
+      const VIDEO_EXTENSIONS = /\.(mp4|mov|m4v|webm|ogv|ogg|avi|mkv|mpg|mpeg|mts|m2ts|ts|wmv|vob|flv|f4v|3gp|3g2|rm|rmvb)$/i;
+      const HISTORY_LIMIT = 10;
+      const $ = (id) => document.getElementById(id);
+      const state = {
+        phases: DEFAULT_PHASES.map((phase) => ({ ...phase })),
+        videos: [],
+        currentIndex: -1,
+        selectedPhaseId: 1,
+        markStart: null,
+        markEnd: null,
+        editingId: null,
+        rootHandle: null,
+        pendingFolder: null,
+        sourceName: 'HTML file location'
+      };
+
+      const video = $('video');
+      let toastTimer = null;
+
+      function notify(message, kind = '') {
+        const toast = $('toast');
+        toast.textContent = message;
+        toast.className = `toast ${kind}`.trim();
+        requestAnimationFrame(() => toast.classList.add('show'));
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('show'), 2800);
+      }
+
+      function currentVideo() {
+        return state.currentIndex >= 0 ? state.videos[state.currentIndex] : null;
+      }
+
+      function baseName(fileName) {
+        return fileName.replace(/\.[^.]+$/, '');
+      }
+
+      function safeFileName(value) {
+        return (value || 'annotation').replace(/[\\/:*?"<>|]/g, '_').trim() || 'annotation';
+      }
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function roundedTime(value) {
+        return Math.round(Number(value || 0) * 1000) / 1000;
+      }
+
+      function formatTime(value, includeMs = false) {
+        const safe = Math.max(0, Number.isFinite(value) ? value : 0);
+        const whole = Math.floor(safe);
+        const hours = Math.floor(whole / 3600);
+        const minutes = Math.floor((whole % 3600) / 60);
+        const seconds = whole % 60;
+        const main = [hours, minutes, seconds].map((part) => String(part).padStart(2, '0')).join(':');
+        if (!includeMs) return main;
+        const ms = Math.round((safe - whole) * 1000);
+        return ms ? `${main}.${String(ms).padStart(3, '0')}` : main;
+      }
+
+      function parseTime(value) {
+        const parts = String(value || '').trim().split(':');
+        if (parts.length !== 3) return NaN;
+        const [hours, minutes, seconds] = parts.map(Number);
+        if (![hours, minutes, seconds].every(Number.isFinite)) return NaN;
+        return hours * 3600 + minutes * 60 + seconds;
+      }
+
+      function phaseById(id) {
+        return state.phases.find((phase) => phase.id === Number(id)) || { id: Number(id), name: `Class ${id}` };
+      }
+
+      function phaseColorClass(id) {
+        const normalized = ((Number(id) - 1) % 7 + 7) % 7 + 1;
+        return `phase-color-${normalized}`;
+      }
+
+      function phaseCssColor(id) {
+        const colors = ['var(--accent)', 'var(--cyan)', 'var(--amber)', 'var(--blue)', 'var(--coral)', 'var(--pink)', 'var(--violet)'];
+        return colors[((Number(id) - 1) % colors.length + colors.length) % colors.length];
+      }
+
+      function draftKey(item) {
+        return `issas-workflow:v1:${item.file.name}:${item.file.size}:${item.file.lastModified}`;
+      }
+
+      function historySnapshot(item) {
+        return {
+          annotations: item.annotations.map((annotation) => ({ ...annotation })),
+          note: item.note
+        };
+      }
+
+      function normalizeHistoryStack(stack) {
+        if (!Array.isArray(stack)) return [];
+        return stack.slice(-HISTORY_LIMIT).map((snapshot) => ({
+          annotations: Array.isArray(snapshot?.annotations)
+            ? snapshot.annotations.map(normalizeAnnotation).filter(Boolean)
+            : [],
+          note: typeof snapshot?.note === 'string' ? snapshot.note : ''
+        }));
+      }
+
+      function updateHistoryControls() {
+        const item = currentVideo();
+        const undoCount = item?.historyPast?.length || 0;
+        const redoCount = item?.historyFuture?.length || 0;
+        $('undoBtn').disabled = undoCount === 0;
+        $('redoBtn').disabled = redoCount === 0;
+        $('undoBtn').title = undoCount ? `Undo interval change (${undoCount} available) · Ctrl/Command+Z` : 'Nothing to undo · Ctrl/Command+Z';
+        $('redoBtn').title = redoCount ? `Redo interval change (${redoCount} available) · Ctrl/Command+Shift+Z or Ctrl/Command+Y` : 'Nothing to redo · Ctrl/Command+Shift+Z or Ctrl/Command+Y';
+        $('historyDepth').textContent = `${undoCount} / ${HISTORY_LIMIT}`;
+        $('historyDepth').title = `${undoCount} undo step${undoCount === 1 ? '' : 's'} and ${redoCount} redo step${redoCount === 1 ? '' : 's'} available`;
+      }
+
+      function recordHistory(item) {
+        item.historyPast.push(historySnapshot(item));
+        if (item.historyPast.length > HISTORY_LIMIT) item.historyPast.shift();
+        item.historyFuture = [];
+        updateHistoryControls();
+      }
+
+      function restoreHistorySnapshot(item, snapshot) {
+        item.annotations = snapshot.annotations.map((annotation) => ({ ...annotation }));
+        item.note = snapshot.note;
+        if (item === currentVideo()) $('videoNote').value = item.note;
+      }
+
+      function refreshAfterHistoryChange(item, message) {
+        resetComposer();
+        saveDraft(item);
+        renderAnnotations();
+        renderTimeline();
+        renderLibrary();
+        updateHistoryControls();
+        notify(message);
+      }
+
+      function undoIntervalChange() {
+        const item = currentVideo();
+        if (!item?.historyPast.length) {
+          notify('Nothing to undo.');
+          return;
+        }
+        item.historyFuture.push(historySnapshot(item));
+        if (item.historyFuture.length > HISTORY_LIMIT) item.historyFuture.shift();
+        restoreHistorySnapshot(item, item.historyPast.pop());
+        refreshAfterHistoryChange(item, 'Interval change undone.');
+      }
+
+      function redoIntervalChange() {
+        const item = currentVideo();
+        if (!item?.historyFuture.length) {
+          notify('Nothing to redo.');
+          return;
+        }
+        item.historyPast.push(historySnapshot(item));
+        if (item.historyPast.length > HISTORY_LIMIT) item.historyPast.shift();
+        restoreHistorySnapshot(item, item.historyFuture.pop());
+        refreshAfterHistoryChange(item, 'Interval change redone.');
+      }
+
+      function saveDraft(item = currentVideo()) {
+        if (!item) return;
+        try {
+          localStorage.setItem(draftKey(item), JSON.stringify({
+            annotations: item.annotations,
+            note: item.note,
+            historyPast: item.historyPast,
+            historyFuture: item.historyFuture
+          }));
+          $('draftBadge').textContent = 'Draft saved';
+          $('draftBadge').classList.add('live');
+        } catch (error) {
+          $('draftBadge').textContent = 'Draft in memory';
+        }
+      }
+
+      function restoreDraft(item) {
+        try {
+          const raw = localStorage.getItem(draftKey(item));
+          if (!raw) return;
+          const draft = JSON.parse(raw);
+          if (Array.isArray(draft.annotations)) item.annotations = draft.annotations.map(normalizeAnnotation).filter(Boolean);
+          item.note = typeof draft.note === 'string' ? draft.note : '';
+          item.historyPast = normalizeHistoryStack(draft.historyPast);
+          item.historyFuture = normalizeHistoryStack(draft.historyFuture);
+        } catch (error) {
+          console.warn('Unable to restore draft', error);
+        }
+      }
+
+      function normalizeAnnotation(annotation) {
+        const start = roundedTime(Number(annotation.start));
+        const end = roundedTime(Number(annotation.end));
+        const classId = Number(annotation.classId ?? annotation.class_id);
+        if (![start, end, classId].every(Number.isFinite) || end < start) return null;
+        return {
+          id: annotation.id || createId(),
+          start,
+          end,
+          classId,
+          note: String(annotation.note || '')
+        };
+      }
+
+      function createId() {
+        return globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      }
+
+      function isVideoFile(file) {
+        return Boolean(file && ((file.type || '').startsWith('video/') || VIDEO_EXTENSIONS.test(file.name || '')));
+      }
+
+      function normalizeFileEntry(entry) {
+        const file = entry?.file || entry;
+        if (!file || typeof file.name !== 'string') return null;
+        return {
+          file,
+          relativePath: entry?.relativePath || file.webkitRelativePath || file.name
+        };
+      }
+
+      function addFiles(files, sourceName = '') {
+        const candidates = Array.from(files || []).map(normalizeFileEntry).filter((entry) => entry && isVideoFile(entry.file));
+        if (!candidates.length) {
+          notify('No supported video files were found.', 'error');
+          return;
+        }
+
+        let firstAddedIndex = -1;
+        candidates.sort((a, b) => a.relativePath.localeCompare(b.relativePath, undefined, { numeric: true }));
+        for (const candidate of candidates) {
+          const { file, relativePath } = candidate;
+          const duplicate = state.videos.some((item) => item.file.name === file.name && item.file.size === file.size && item.file.lastModified === file.lastModified);
+          if (duplicate) continue;
+          const item = {
+            file,
+            url: URL.createObjectURL(file),
+            id: baseName(file.name),
+            relativePath,
+            annotations: [],
+            note: '',
+            historyPast: [],
+            historyFuture: [],
+            duration: 0,
+            width: 0,
+            height: 0
+          };
+          restoreDraft(item);
+          state.videos.push(item);
+          if (firstAddedIndex < 0) firstAddedIndex = state.videos.length - 1;
+        }
+
+        if (sourceName) state.sourceName = sourceName;
+        renderLibrary();
+        if (state.currentIndex < 0 && firstAddedIndex >= 0) selectVideo(firstAddedIndex);
+        notify(`${candidates.length} video${candidates.length === 1 ? '' : 's'} available.`);
+      }
+
+      function closeFolderConfirm() {
+        state.pendingFolder = null;
+        $('folderConfirm').classList.add('hidden');
+      }
+
+      async function collectDirectoryFiles(handle, prefix = '') {
+        const tasks = [];
+        for await (const [name, entry] of handle.entries()) {
+          if (entry.kind === 'file') {
+            tasks.push(entry.getFile().then((file) => isVideoFile(file) ? { file, relativePath: `${prefix}${name}` } : null));
+          } else if (entry.kind === 'directory' && name !== 'ann') {
+            tasks.push(collectDirectoryFiles(entry, `${prefix}${name}/`));
+          }
+        }
+        const results = await Promise.all(tasks);
+        return results.flat().filter(Boolean);
+      }
+
+      function promptFolderLoad(files, folderName) {
+        const candidates = Array.from(files || []).map(normalizeFileEntry).filter((entry) => entry && isVideoFile(entry.file));
+        if (!candidates.length) {
+          notify('No supported video files were found in this folder.', 'error');
+          return;
+        }
+        state.pendingFolder = { files: candidates, folderName };
+        $('folderConfirmPath').textContent = folderName;
+        $('folderConfirmSummary').textContent = `${candidates.length} video${candidates.length === 1 ? '' : 's'} detected, including videos in subfolders.`;
+        $('folderConfirm').classList.remove('hidden');
+        $('folderConfirmOpen').focus();
+      }
+
+      function confirmFolderLoad() {
+        const pending = state.pendingFolder;
+        if (!pending) return;
+        $('folderConfirm').classList.add('hidden');
+        state.pendingFolder = null;
+        addFiles(pending.files, pending.folderName);
+      }
+
+      async function openWorkingFolder() {
+        if ('showDirectoryPicker' in window) {
+          try {
+            const handle = await window.showDirectoryPicker({ mode: 'read' });
+            notify('Scanning selected folder...');
+            const files = await collectDirectoryFiles(handle);
+            promptFolderLoad(files, handle.name);
+            return;
+          } catch (error) {
+            if (error.name === 'AbortError') return;
+            console.warn('Read-only folder access failed; using browser fallback.', error);
+          }
+        }
+        $('folderInput').click();
+      }
+
+      function selectVideo(index) {
+        const item = state.videos[index];
+        if (!item) return;
+        video.pause();
+        state.currentIndex = index;
+        resetComposer();
+        video.src = item.url;
+        video.load();
+        $('videoNote').value = item.note;
+        $('currentFileName').textContent = item.file.name;
+        $('exportName').textContent = `${safeFileName(item.id)}.csv`;
+        $('draftBadge').textContent = 'Draft loaded';
+        $('draftBadge').classList.toggle('live', Boolean(item.annotations.length || item.note));
+        $('emptyState').classList.add('hidden');
+        $('stageStatus').classList.remove('hidden');
+        renderLibrary();
+        renderAnnotations();
+        renderTimeline();
+        updateHistoryControls();
+        updateExportPath();
+      }
+
+      function renderLibrary() {
+        $('sourceLabel').textContent = state.sourceName;
+        $('fileCount').textContent = `${state.videos.length} video${state.videos.length === 1 ? '' : 's'}`;
+        const list = $('videoList');
+        list.replaceChildren();
+        state.videos.forEach((item, index) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = `video-item${index === state.currentIndex ? ' active' : ''}`;
+          button.addEventListener('click', () => selectVideo(index));
+          const dot = document.createElement('span');
+          dot.className = 'video-dot';
+          const main = document.createElement('span');
+          main.className = 'video-main';
+          const name = document.createElement('span');
+          name.className = 'video-name';
+          name.textContent = item.file.name;
+          const path = document.createElement('span');
+          path.className = 'video-path';
+          path.textContent = item.relativePath;
+          main.append(name, path);
+          const count = document.createElement('span');
+          count.className = 'video-count';
+          count.textContent = String(item.annotations.length);
+          button.append(dot, main, count);
+          list.append(button);
+        });
+      }
+
+      function renderPhaseMap() {
+        const map = $('phaseMap');
+        map.replaceChildren();
+        state.phases.forEach((phase) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = `phase-option${phase.id === state.selectedPhaseId ? ' selected' : ''}`;
+          button.setAttribute('aria-pressed', phase.id === state.selectedPhaseId ? 'true' : 'false');
+          button.addEventListener('click', () => {
+            state.selectedPhaseId = phase.id;
+            renderPhaseMap();
+          });
+          const id = document.createElement('span');
+          id.className = 'phase-id';
+          id.textContent = String(phase.id).padStart(2, '0');
+          const swatch = document.createElement('span');
+          swatch.className = `phase-swatch ${phaseColorClass(phase.id)}`;
+          const name = document.createElement('span');
+          name.className = 'phase-name';
+          name.textContent = phase.name;
+          button.append(id, swatch, name);
+          map.append(button);
+        });
+      }
+
+      function renderMarks() {
+        $('startValue').textContent = state.markStart === null ? '—' : formatTime(state.markStart, true);
+        $('endValue').textContent = state.markEnd === null ? '—' : formatTime(state.markEnd, true);
+        renderDraftTimeline();
+      }
+
+      function positionAnchorGroup(groupId, anchorId, percent) {
+        const group = $(groupId);
+        const anchor = $(anchorId);
+        group.style.left = `${clamp(percent, 0, 100)}%`;
+        group.style.transform = `translateX(${-anchor.offsetLeft - anchor.offsetWidth / 2}px)`;
+      }
+
+      function renderDraftTimeline() {
+        const item = currentVideo();
+        const duration = Number.isFinite(video.duration) ? video.duration : item?.duration || 0;
+        const hasStart = state.markStart !== null;
+        const hasEnd = state.markEnd !== null;
+        $('startAnchorGroup').classList.toggle('hidden', !hasStart || !duration);
+        $('endAnchorGroup').classList.toggle('hidden', !hasEnd || !duration);
+
+        if (duration && hasStart) {
+          const percent = state.markStart / duration * 100;
+          positionAnchorGroup('startAnchorGroup', 'startAnchor', percent);
+          $('startAnchor').title = `Start ${formatTime(state.markStart, true)} · drag to adjust`;
+          $('startAnchor').setAttribute('aria-label', $('startAnchor').title);
+        }
+        if (duration && hasEnd) {
+          const percent = state.markEnd / duration * 100;
+          positionAnchorGroup('endAnchorGroup', 'endAnchor', percent);
+          $('endAnchor').title = `End ${formatTime(state.markEnd, true)} · drag to adjust`;
+          $('endAnchor').setAttribute('aria-label', $('endAnchor').title);
+        }
+
+        let first = null;
+        let second = null;
+        let preview = false;
+        if (hasStart && hasEnd) {
+          first = state.markStart;
+          second = state.markEnd;
+        } else if (hasStart && duration) {
+          first = state.markStart;
+          second = video.currentTime;
+          preview = true;
+        } else if (hasEnd && duration) {
+          first = video.currentTime;
+          second = state.markEnd;
+          preview = true;
+        }
+
+        const selection = $('draftSelection');
+        if (!duration || first === null || second === null || Math.abs(first - second) < 0.001) {
+          selection.classList.add('hidden');
+          return;
+        }
+        const left = clamp(Math.min(first, second) / duration * 100, 0, 100);
+        const right = clamp(Math.max(first, second) / duration * 100, 0, 100);
+        selection.style.left = `${left}%`;
+        selection.style.width = `${right - left}%`;
+        selection.classList.remove('hidden');
+        selection.classList.toggle('preview', preview);
+      }
+
+      function renderComposerMode() {
+        const editing = Boolean(state.editingId);
+        const annotation = editing ? currentVideo()?.annotations.find((entry) => entry.id === state.editingId) : null;
+        const phase = annotation ? phaseById(annotation.classId) : null;
+        $('intervalComposer').classList.toggle('composer-editing', editing);
+        $('composerTitle').textContent = editing ? 'Edit interval' : 'New interval';
+        $('saveIntervalBtn').textContent = editing ? 'Update interval' : 'Add interval';
+        $('cancelEditBtn').classList.toggle('hidden', !editing);
+        $('formModeBadge').textContent = editing ? 'UPDATE MODE' : 'ADD MODE';
+        $('formModeText').textContent = editing && annotation
+          ? `Editing ID ${annotation.classId} · ${phase.name}`
+          : 'Ready to create a new interval';
+        $('resetMarksBtn').title = editing ? 'Discard changes and return to add mode' : 'Clear interval form';
+        $('resetMarksBtn').setAttribute('aria-label', $('resetMarksBtn').title);
+      }
+
+      function resetComposer() {
+        state.markStart = null;
+        state.markEnd = null;
+        state.editingId = null;
+        $('intervalNote').value = '';
+        renderComposerMode();
+        renderMarks();
+      }
+
+      function returnToAddMode() {
+        const wasEditing = Boolean(state.editingId);
+        resetComposer();
+        renderAnnotations();
+        if (wasEditing) notify('Returned to add interval mode.');
+      }
+
+      function mark(which) {
+        if (!currentVideo()) {
+          notify('Load a video before marking an interval.', 'error');
+          return;
+        }
+        const value = roundedTime(video.currentTime);
+        if (which === 'start') {
+          if (state.markEnd !== null && value > state.markEnd) {
+            notify('Start must be at or before the end anchor.', 'error');
+            return;
+          }
+          state.markStart = value;
+        } else {
+          if (state.markStart !== null && value < state.markStart) {
+            notify('End must be at or after the start anchor.', 'error');
+            return;
+          }
+          state.markEnd = value;
+        }
+        renderMarks();
+      }
+
+      function clearDraftAnchor(kind) {
+        if (kind === 'start') state.markStart = null;
+        else state.markEnd = null;
+        renderMarks();
+        notify(`${kind === 'start' ? 'Start' : 'End'} anchor deleted.`);
+      }
+
+      function setAnchorTime(kind, value) {
+        const duration = video.duration || currentVideo()?.duration || 0;
+        let next = clamp(roundedTime(value), 0, duration);
+        if (kind === 'start' && state.markEnd !== null) next = Math.min(next, state.markEnd);
+        if (kind === 'end' && state.markStart !== null) next = Math.max(next, state.markStart);
+        if (kind === 'start') state.markStart = next;
+        else state.markEnd = next;
+        video.currentTime = next;
+        renderMarks();
+      }
+
+      function startAnchorDrag(event, kind) {
+        const duration = video.duration || currentVideo()?.duration || 0;
+        const initial = kind === 'start' ? state.markStart : state.markEnd;
+        if (event.button !== 0 || !duration || initial === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        video.pause();
+        const anchor = kind === 'start' ? $('startAnchor') : $('endAnchor');
+        const startX = event.clientX;
+        const trackWidth = $('timelineTrack').getBoundingClientRect().width;
+        const pointerId = event.pointerId;
+        anchor.classList.add('is-dragging');
+        const move = (moveEvent) => {
+          if (moveEvent.pointerId !== pointerId) return;
+          setAnchorTime(kind, initial + (moveEvent.clientX - startX) / trackWidth * duration);
+        };
+        const end = (endEvent) => {
+          if (endEvent.pointerId !== pointerId) return;
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', end);
+          window.removeEventListener('pointercancel', end);
+          anchor.classList.remove('is-dragging');
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', end);
+        window.addEventListener('pointercancel', end);
+      }
+
+      function adjustAnchorWithKeyboard(event, kind) {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        event.stopPropagation();
+        const current = kind === 'start' ? state.markStart : state.markEnd;
+        if (current === null) return;
+        const step = event.shiftKey ? 1 : 1 / 30;
+        setAnchorTime(kind, current + (event.key === 'ArrowRight' ? step : -step));
+      }
+
+      function saveInterval() {
+        const item = currentVideo();
+        if (!item) {
+          notify('Load a video before adding an interval.', 'error');
+          return;
+        }
+        if (state.markStart === null || state.markEnd === null) {
+          notify('Mark both the start and end timestamps.', 'error');
+          return;
+        }
+        if (state.markEnd < state.markStart) {
+          notify('The end timestamp must not be earlier than the start.', 'error');
+          return;
+        }
+
+        const wasEditing = Boolean(state.editingId);
+        const annotation = {
+          id: state.editingId || createId(),
+          start: state.markStart,
+          end: state.markEnd,
+          classId: state.selectedPhaseId,
+          note: $('intervalNote').value.trim()
+        };
+        recordHistory(item);
+        if (state.editingId) {
+          const index = item.annotations.findIndex((entry) => entry.id === state.editingId);
+          if (index >= 0) item.annotations[index] = annotation;
+        } else {
+          item.annotations.push(annotation);
+        }
+        item.annotations.sort((a, b) => a.start - b.start || a.end - b.end || a.classId - b.classId);
+        saveDraft(item);
+        resetComposer();
+        renderAnnotations();
+        renderTimeline();
+        renderLibrary();
+        notify(wasEditing ? 'Interval updated.' : 'Interval added.');
+      }
+
+      function editInterval(id) {
+        const item = currentVideo();
+        const annotation = item?.annotations.find((entry) => entry.id === id);
+        if (!annotation) return;
+        state.editingId = annotation.id;
+        state.markStart = annotation.start;
+        state.markEnd = annotation.end;
+        state.selectedPhaseId = annotation.classId;
+        $('intervalNote').value = annotation.note;
+        renderComposerMode();
+        renderMarks();
+        renderPhaseMap();
+        renderAnnotations();
+        video.currentTime = clamp(annotation.start, 0, video.duration || annotation.start);
+        $('inspector').scrollTop = Math.max(0, $('intervalComposer').offsetTop - 48);
+      }
+
+      function deleteInterval(id) {
+        const item = currentVideo();
+        if (!item) return;
+        recordHistory(item);
+        item.annotations = item.annotations.filter((entry) => entry.id !== id);
+        if (state.editingId === id) resetComposer();
+        saveDraft(item);
+        renderAnnotations();
+        renderTimeline();
+        renderLibrary();
+        notify('Interval removed. Undo is available.');
+      }
+
+      function renderAnnotations() {
+        const item = currentVideo();
+        const annotations = item?.annotations || [];
+        $('intervalCount').textContent = String(annotations.length);
+        const list = $('annotationList');
+        list.replaceChildren();
+        if (!annotations.length) {
+          const empty = document.createElement('div');
+          empty.className = 'annotation-empty';
+          empty.textContent = 'No intervals annotated';
+          list.append(empty);
+          return;
+        }
+
+        annotations.forEach((annotation) => {
+          const phase = phaseById(annotation.classId);
+          const isEditing = annotation.id === state.editingId;
+          const row = document.createElement('div');
+          row.className = `annotation-row${isEditing ? ' is-editing' : ''}`;
+          row.dataset.id = annotation.id;
+          row.style.setProperty('--phase-color', phaseCssColor(annotation.classId));
+          const stripe = document.createElement('div');
+          stripe.className = 'annotation-stripe';
+          const body = document.createElement('div');
+          body.className = 'annotation-body';
+          body.title = 'Single-click to seek · double-click to edit';
+          body.addEventListener('click', () => { video.currentTime = clamp(annotation.start, 0, video.duration || annotation.start); });
+          body.addEventListener('dblclick', (event) => {
+            event.preventDefault();
+            editInterval(annotation.id);
+          });
+          const title = document.createElement('div');
+          title.className = 'annotation-title';
+          const strong = document.createElement('strong');
+          strong.textContent = phase.name;
+          const classId = document.createElement('span');
+          classId.textContent = `ID ${annotation.classId}`;
+          title.append(strong, classId);
+          if (isEditing) {
+            const editingChip = document.createElement('span');
+            editingChip.className = 'editing-chip';
+            editingChip.textContent = 'Editing';
+            title.append(editingChip);
+          }
+          const time = document.createElement('div');
+          time.className = 'annotation-time';
+          time.textContent = `${formatTime(annotation.start, true)} – ${formatTime(annotation.end, true)}`;
+          body.append(title, time);
+          if (annotation.note) {
+            const note = document.createElement('div');
+            note.className = 'annotation-note';
+            note.textContent = annotation.note;
+            body.append(note);
+          }
+          const actions = document.createElement('div');
+          actions.className = 'annotation-actions';
+          const edit = document.createElement('button');
+          edit.type = 'button';
+          edit.className = `icon-btn compact edit-toggle${isEditing ? ' is-active' : ''}`;
+          edit.title = isEditing ? 'Exit update mode' : 'Edit interval';
+          edit.setAttribute('aria-label', edit.title);
+          edit.setAttribute('aria-pressed', isEditing ? 'true' : 'false');
+          const editGlyph = document.createElement('span');
+          editGlyph.className = 'edit-glyph';
+          editGlyph.setAttribute('aria-hidden', 'true');
+          editGlyph.textContent = '✎';
+          edit.append(editGlyph);
+          edit.addEventListener('click', () => isEditing ? returnToAddMode() : editInterval(annotation.id));
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'icon-btn compact';
+          remove.textContent = '×';
+          remove.title = 'Delete interval';
+          remove.setAttribute('aria-label', 'Delete interval');
+          remove.addEventListener('click', () => deleteInterval(annotation.id));
+          actions.append(edit, remove);
+          row.append(stripe, body, actions);
+          list.append(row);
+        });
+        updateActiveInterval();
+      }
+
+      function renderTimeline() {
+        const item = currentVideo();
+        const duration = video.duration || item?.duration || 0;
+        const segments = $('timelineSegments');
+        segments.replaceChildren();
+        renderDraftTimeline();
+        if (!duration || !item) return;
+        item.annotations.forEach((annotation) => {
+          const phase = phaseById(annotation.classId);
+          const segment = document.createElement('button');
+          segment.type = 'button';
+          segment.className = `timeline-segment ${phaseColorClass(annotation.classId)}`;
+          segment.style.left = `${clamp(annotation.start / duration * 100, 0, 100)}%`;
+          segment.style.width = `${clamp((annotation.end - annotation.start) / duration * 100, 0, 100)}%`;
+          segment.title = `${phase.name}: single-click to seek · double-click to edit`;
+          segment.setAttribute('aria-label', `${phase.name}, ${formatTime(annotation.start, true)} to ${formatTime(annotation.end, true)}. Double-click or press Enter to edit.`);
+          segment.addEventListener('click', (event) => {
+            event.stopPropagation();
+            clearTimeout(segment._clickTimer);
+            const rect = $('timelineTrack').getBoundingClientRect();
+            const seekTime = event.detail === 0
+              ? annotation.start
+              : clamp((event.clientX - rect.left) / rect.width * duration, 0, duration);
+            segment._clickTimer = setTimeout(() => {
+              video.currentTime = seekTime;
+              renderDraftTimeline();
+            }, 220);
+          });
+          segment.addEventListener('dblclick', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            clearTimeout(segment._clickTimer);
+            editInterval(annotation.id);
+          });
+          segment.addEventListener('keydown', (event) => {
+            if (event.key === ' ') {
+              event.stopPropagation();
+              return;
+            }
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            event.stopPropagation();
+            clearTimeout(segment._clickTimer);
+            editInterval(annotation.id);
+          });
+          segment.addEventListener('mouseenter', () => {
+            $('activePhase').textContent = `${String(annotation.classId).padStart(2, '0')} · ${phase.name} · double-click to edit`;
+          });
+          segment.addEventListener('mouseleave', updateActiveInterval);
+          segments.append(segment);
+        });
+      }
+
+      function updatePlaybackUI() {
+        const item = currentVideo();
+        const duration = Number.isFinite(video.duration) ? video.duration : item?.duration || 0;
+        const current = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+        $('timeReadout').textContent = `${formatTime(current)} / ${formatTime(duration)}`;
+        $('seekInput').max = String(duration || 0);
+        $('seekInput').value = String(current);
+        $('timelinePlayhead').style.left = `${duration ? clamp(current / duration * 100, 0, 100) : 0}%`;
+        renderDraftTimeline();
+        updateActiveInterval();
+      }
+
+      function updateActiveInterval() {
+        const item = currentVideo();
+        const current = video.currentTime || 0;
+        const active = item?.annotations.find((entry) => entry.end === entry.start ? Math.abs(current - entry.start) < 0.08 : current >= entry.start && current <= entry.end);
+        $('activePhase').textContent = active ? `${String(active.classId).padStart(2, '0')} · ${phaseById(active.classId).name}` : 'No active phase';
+        document.querySelectorAll('.annotation-row').forEach((row) => row.classList.toggle('is-current', row.dataset.id === active?.id));
+      }
+
+      function togglePlayback() {
+        if (!currentVideo()) return;
+        if (video.paused) video.play().catch(() => notify('Playback could not start.', 'error'));
+        else video.pause();
+      }
+
+      function seekBy(delta) {
+        if (!currentVideo()) return;
+        video.currentTime = clamp(video.currentTime + delta, 0, video.duration || 0);
+      }
+
+      function parseClassMap(text) {
+        const phases = [];
+        const seen = new Set();
+        const add = (idValue, nameValue) => {
+          const id = Number(idValue);
+          const name = String(nameValue || '').trim().replace(/^['"]|['"]$/g, '');
+          if (!Number.isInteger(id) || !name || seen.has(id)) return;
+          seen.add(id);
+          phases.push({ id, name });
+        };
+
+        try {
+          const parsed = JSON.parse(text);
+          const source = parsed.PHASE_DESC || parsed.phase_map || parsed;
+          if (Array.isArray(source)) source.forEach((entry) => add(entry.id ?? entry.class_id, entry.name ?? entry.label));
+          else if (source && typeof source === 'object') Object.entries(source).forEach(([key, value]) => Number.isFinite(Number(key)) ? add(key, value) : add(value, key));
+        } catch (error) {
+          // Continue with the Python-dict and line-oriented formats below.
+        }
+
+        const pairPattern = /(\d+)\s*:\s*["']([^"']+)["']/g;
+        for (const match of text.matchAll(pairPattern)) add(match[1], match[2]);
+        text.split(/\r?\n/).forEach((line) => {
+          const clean = line.trim().replace(/[{},]$/, '').trim();
+          let match = clean.match(/^(\d+)\s*[,;:=\t]\s*["']?(.+?)["']?$/);
+          if (match) add(match[1], match[2]);
+          else {
+            match = clean.match(/^["']?(.+?)["']?\s*[,;:=\t]\s*(\d+)$/);
+            if (match) add(match[2], match[1]);
+          }
+        });
+        return phases.sort((a, b) => a.id - b.id);
+      }
+
+      function parseCsv(text) {
+        const rows = [];
+        let row = [];
+        let field = '';
+        let quoted = false;
+        for (let index = 0; index < text.length; index += 1) {
+          const char = text[index];
+          if (quoted) {
+            if (char === '"' && text[index + 1] === '"') { field += '"'; index += 1; }
+            else if (char === '"') quoted = false;
+            else field += char;
+          } else if (char === '"') quoted = true;
+          else if (char === ',') { row.push(field); field = ''; }
+          else if (char === '\n') { row.push(field.replace(/\r$/, '')); rows.push(row); row = []; field = ''; }
+          else field += char;
+        }
+        if (field.length || row.length) { row.push(field.replace(/\r$/, '')); rows.push(row); }
+        return rows;
+      }
+
+      function importCsvText(text) {
+        const rows = parseCsv(text).filter((row) => row.some((cell) => cell.trim()));
+        if (rows.length < 2) throw new Error('The CSV does not contain annotation rows.');
+        const headers = rows[0].map((header) => header.trim().replace(/^\uFEFF/, '').toLowerCase().replace(/\s+/g, '_'));
+        const videoColumn = headers.findIndex((header) => header === 'video_id' || header === 'video');
+        const phaseColumn = headers.findIndex((header) => header.startsWith('phase'));
+        const clipNoteColumn = headers.findIndex((header) => header === 'note_clip' || header === 'clip_note');
+        const videoNoteColumn = headers.findIndex((header) => header === 'note_video' || header === 'video_note');
+        if (phaseColumn < 0) throw new Error('Missing Phase (start-end-phase_id) column.');
+
+        const grouped = new Map();
+        let inheritedVideoId = '';
+        for (const row of rows.slice(1)) {
+          const explicitVideoId = videoColumn >= 0 ? (row[videoColumn] || '').trim() : '';
+          if (explicitVideoId) inheritedVideoId = explicitVideoId;
+          const videoId = inheritedVideoId || currentVideo()?.id || 'annotation';
+          if (!grouped.has(videoId)) grouped.set(videoId, { annotations: [], note: '' });
+          const group = grouped.get(videoId);
+          const phaseValue = (row[phaseColumn] || '').trim();
+          if (phaseValue) {
+            const match = phaseValue.match(/^\s*(\d{1,4}:\d{2}:\d{2}(?:\.\d+)?)\s*-\s*(\d{1,4}:\d{2}:\d{2}(?:\.\d+)?)\s*-\s*(\d+)\s*$/);
+            if (!match) throw new Error(`Invalid phase value: ${phaseValue}`);
+            const annotation = normalizeAnnotation({
+              start: parseTime(match[1]),
+              end: parseTime(match[2]),
+              classId: Number(match[3]),
+              note: clipNoteColumn >= 0 ? row[clipNoteColumn] || '' : ''
+            });
+            if (annotation) group.annotations.push(annotation);
+          }
+          if (videoNoteColumn >= 0 && row[videoNoteColumn]?.trim()) group.note = row[videoNoteColumn].trim();
+        }
+
+        let applied = 0;
+        for (const [videoId, group] of grouped) {
+          const target = state.videos.find((item) => item.id.toLowerCase() === videoId.toLowerCase()) || (grouped.size === 1 ? currentVideo() : null);
+          if (!target) continue;
+          recordHistory(target);
+          target.annotations = group.annotations.sort((a, b) => a.start - b.start || a.classId - b.classId);
+          target.note = group.note;
+          saveDraft(target);
+          applied += group.annotations.length;
+        }
+        if (!applied && !currentVideo()) throw new Error('Load the matching video before importing this CSV.');
+        if (currentVideo()) $('videoNote').value = currentVideo().note;
+        renderAnnotations();
+        renderTimeline();
+        renderLibrary();
+        notify(`Imported ${applied} interval${applied === 1 ? '' : 's'}.`);
+      }
+
+      function csvEscape(value) {
+        const text = String(value ?? '');
+        return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+      }
+
+      function buildCsv(item) {
+        const rows = [['Video_id', 'Phase (start-end-phase_id)', 'Note clip', 'Note video']];
+        if (!item.annotations.length) rows.push([item.id, '', '', item.note]);
+        else item.annotations.forEach((annotation, index) => rows.push([
+          index === 0 ? item.id : '',
+          `${formatTime(annotation.start, true)}-${formatTime(annotation.end, true)}-${annotation.classId}`,
+          annotation.note,
+          index === 0 ? item.note : ''
+        ]));
+        return rows.map((row) => row.map(csvEscape).join(',')).join('\r\n');
+      }
+
+      async function exportCsv() {
+        const item = currentVideo();
+        if (!item) {
+          notify('Load a video before exporting.', 'error');
+          return;
+        }
+        const csv = '\uFEFF' + buildCsv(item);
+        const filename = `${safeFileName(item.id)}.csv`;
+        if (state.rootHandle) {
+          try {
+            const annHandle = await state.rootHandle.getDirectoryHandle('ann', { create: true });
+            const fileHandle = await annHandle.getFileHandle(filename, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(csv);
+            await writable.close();
+            $('draftBadge').textContent = 'CSV exported';
+            $('draftBadge').classList.add('live');
+            notify(`Saved ann/${filename}`);
+            return;
+          } catch (error) {
+            console.warn('Direct folder export failed', error);
+          }
+        }
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        $('draftBadge').textContent = 'CSV downloaded';
+        $('draftBadge').classList.add('live');
+        notify(`Downloaded ${filename}`);
+      }
+
+      function updateExportPath() {
+        const item = currentVideo();
+        const filename = item ? `${safeFileName(item.id)}.csv` : '<video_id>.csv';
+        $('exportPath').textContent = state.rootHandle ? `Write target: ${state.rootHandle.name}/ann/${filename}` : `Download filename: ${filename} · place in ann/`;
+      }
+
+      function toggleLibrary(collapsed) {
+        $('workspace').classList.toggle('library-collapsed', collapsed);
+        $('libraryToggle').classList.toggle('hidden', !collapsed);
+      }
+
+      function storePanelSetting(key, value) {
+        try { localStorage.setItem(`issas-workflow:panel:${key}`, String(value)); }
+        catch (error) { /* The layout still works when local storage is unavailable. */ }
+      }
+
+      function readPanelSetting(key) {
+        try { return localStorage.getItem(`issas-workflow:panel:${key}`); }
+        catch (error) { return null; }
+      }
+
+      function setInspectorWidth(width, persist = true) {
+        const maxWidth = Math.max(280, Math.min(620, window.innerWidth - 520));
+        const nextWidth = clamp(Math.round(width), 280, maxWidth);
+        $('workspace').style.setProperty('--inspector-width', `${nextWidth}px`);
+        if (persist) storePanelSetting('inspector-width', nextWidth);
+        return nextWidth;
+      }
+
+      function setTransportHeight(height, persist = true) {
+        const minHeight = window.innerWidth <= 560 ? 210 : 170;
+        const maxHeight = Math.max(minHeight, Math.min(360, $('viewer').clientHeight - 180));
+        const nextHeight = clamp(Math.round(height), minHeight, maxHeight);
+        $('viewer').style.setProperty('--transport-height', `${nextHeight}px`);
+        if (persist) storePanelSetting('transport-height', nextHeight);
+        return nextHeight;
+      }
+
+      function toggleInspector(collapsed, persist = true) {
+        $('workspace').classList.toggle('inspector-collapsed', collapsed);
+        $('inspectorExpand').classList.toggle('hidden', !collapsed);
+        if (persist) storePanelSetting('inspector-collapsed', collapsed ? 1 : 0);
+      }
+
+      function toggleTransport(collapsed, persist = true) {
+        $('viewer').classList.toggle('transport-collapsed', collapsed);
+        $('transportFold').textContent = collapsed ? '⌃' : '⌄';
+        $('transportFold').title = collapsed ? 'Expand playback panel' : 'Fold playback panel';
+        $('transportFold').setAttribute('aria-label', $('transportFold').title);
+        if (persist) storePanelSetting('transport-collapsed', collapsed ? 1 : 0);
+      }
+
+      function beginPanelResize(event, className, onMove, onEnd) {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        const pointerId = event.pointerId;
+        document.body.classList.add(className);
+        const move = (moveEvent) => { if (moveEvent.pointerId === pointerId) onMove(moveEvent); };
+        const end = (endEvent) => {
+          if (endEvent.pointerId !== pointerId) return;
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', end);
+          window.removeEventListener('pointercancel', end);
+          document.body.classList.remove(className);
+          onEnd();
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', end);
+        window.addEventListener('pointercancel', end);
+      }
+
+      function startInspectorResize(event) {
+        if ($('workspace').classList.contains('inspector-collapsed') || window.innerWidth <= 900) return;
+        const startX = event.clientX;
+        const startWidth = $('inspector').getBoundingClientRect().width;
+        let currentWidth = startWidth;
+        beginPanelResize(event, 'is-resizing', (moveEvent) => {
+          currentWidth = setInspectorWidth(startWidth + startX - moveEvent.clientX, false);
+        }, () => storePanelSetting('inspector-width', currentWidth));
+      }
+
+      function startTransportResize(event) {
+        if ($('viewer').classList.contains('transport-collapsed')) return;
+        const startY = event.clientY;
+        const startHeight = $('transport').getBoundingClientRect().height;
+        let currentHeight = startHeight;
+        beginPanelResize(event, 'is-resizing-vertical', (moveEvent) => {
+          currentHeight = setTransportHeight(startHeight + startY - moveEvent.clientY, false);
+        }, () => storePanelSetting('transport-height', currentHeight));
+      }
+
+      function restorePanelLayout() {
+        const inspectorWidth = Number(readPanelSetting('inspector-width'));
+        const transportHeight = Number(readPanelSetting('transport-height'));
+        if (Number.isFinite(inspectorWidth) && inspectorWidth > 0) setInspectorWidth(inspectorWidth, false);
+        if (Number.isFinite(transportHeight) && transportHeight > 0) setTransportHeight(transportHeight, false);
+        toggleInspector(readPanelSetting('inspector-collapsed') === '1', false);
+        toggleTransport(readPanelSetting('transport-collapsed') === '1', false);
+      }
+
+      $('openFolderBtn').addEventListener('click', openWorkingFolder);
+      $('emptyOpenBtn').addEventListener('click', openWorkingFolder);
+      $('addVideosBtn').addEventListener('click', () => $('videoInput').click());
+      $('folderInput').addEventListener('change', (event) => {
+        const firstPath = event.target.files[0]?.webkitRelativePath || '';
+        promptFolderLoad(event.target.files, firstPath.split('/')[0] || 'Selected folder');
+        event.target.value = '';
+      });
+      $('videoInput').addEventListener('change', (event) => { addFiles(event.target.files, 'Selected videos'); event.target.value = ''; });
+      $('folderConfirmCancel').addEventListener('click', closeFolderConfirm);
+      $('folderConfirmOpen').addEventListener('click', confirmFolderLoad);
+      $('folderConfirm').addEventListener('click', (event) => { if (event.target === $('folderConfirm')) closeFolderConfirm(); });
+
+      ['dragenter', 'dragover'].forEach((type) => $('dropZone').addEventListener(type, (event) => {
+        event.preventDefault();
+        $('dropZone').classList.add('dragging');
+      }));
+      ['dragleave', 'drop'].forEach((type) => $('dropZone').addEventListener(type, (event) => {
+        event.preventDefault();
+        $('dropZone').classList.remove('dragging');
+      }));
+      $('dropZone').addEventListener('drop', (event) => addFiles(event.dataTransfer.files, 'Dropped files'));
+
+      $('libraryFold').addEventListener('click', () => toggleLibrary(true));
+      $('libraryToggle').addEventListener('click', () => toggleLibrary(false));
+      $('inspectorFold').addEventListener('click', () => toggleInspector(true));
+      $('inspectorExpand').addEventListener('click', () => toggleInspector(false));
+      $('transportFold').addEventListener('click', () => toggleTransport(!$('viewer').classList.contains('transport-collapsed')));
+      $('inspectorResizer').addEventListener('pointerdown', startInspectorResize);
+      $('transportResizer').addEventListener('pointerdown', startTransportResize);
+      $('inspectorResizer').addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowLeft') { event.preventDefault(); setInspectorWidth($('inspector').getBoundingClientRect().width + 16); }
+        else if (event.key === 'ArrowRight') { event.preventDefault(); setInspectorWidth($('inspector').getBoundingClientRect().width - 16); }
+      });
+      $('transportResizer').addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowUp') { event.preventDefault(); setTransportHeight($('transport').getBoundingClientRect().height + 16); }
+        else if (event.key === 'ArrowDown') { event.preventDefault(); setTransportHeight($('transport').getBoundingClientRect().height - 16); }
+      });
+      $('playBtn').addEventListener('click', togglePlayback);
+      $('restartBtn').addEventListener('click', () => { if (currentVideo()) video.currentTime = 0; });
+      $('backTwoBtn').addEventListener('click', () => seekBy(-2));
+      $('forwardTwoBtn').addEventListener('click', () => seekBy(2));
+      $('prevFrameBtn').addEventListener('click', () => seekBy(-1 / 30));
+      $('nextFrameBtn').addEventListener('click', () => seekBy(1 / 30));
+      $('speedSelect').addEventListener('change', (event) => { video.playbackRate = Number(event.target.value); });
+      $('undoBtn').addEventListener('click', undoIntervalChange);
+      $('redoBtn').addEventListener('click', redoIntervalChange);
+      $('seekInput').addEventListener('input', (event) => {
+        video.currentTime = Number(event.target.value);
+        renderDraftTimeline();
+      });
+      $('markStartBtn').addEventListener('click', () => mark('start'));
+      $('markEndBtn').addEventListener('click', () => mark('end'));
+      $('clearStartAnchor').addEventListener('click', () => clearDraftAnchor('start'));
+      $('clearEndAnchor').addEventListener('click', () => clearDraftAnchor('end'));
+      $('startAnchor').addEventListener('pointerdown', (event) => startAnchorDrag(event, 'start'));
+      $('endAnchor').addEventListener('pointerdown', (event) => startAnchorDrag(event, 'end'));
+      $('startAnchor').addEventListener('keydown', (event) => adjustAnchorWithKeyboard(event, 'start'));
+      $('endAnchor').addEventListener('keydown', (event) => adjustAnchorWithKeyboard(event, 'end'));
+      $('saveIntervalBtn').addEventListener('click', saveInterval);
+      $('resetMarksBtn').addEventListener('click', () => state.editingId ? returnToAddMode() : resetComposer());
+      $('cancelEditBtn').addEventListener('click', returnToAddMode);
+      $('videoNote').addEventListener('input', (event) => {
+        const item = currentVideo();
+        if (!item) return;
+        item.note = event.target.value;
+        saveDraft(item);
+      });
+
+      video.addEventListener('loadedmetadata', () => {
+        const item = currentVideo();
+        if (!item) return;
+        item.duration = video.duration;
+        item.width = video.videoWidth;
+        item.height = video.videoHeight;
+        $('resolutionBadge').textContent = `${item.width}×${item.height}`;
+        $('durationBadge').textContent = formatTime(item.duration);
+        renderTimeline();
+        updatePlaybackUI();
+      });
+      video.addEventListener('timeupdate', updatePlaybackUI);
+      video.addEventListener('seeked', updatePlaybackUI);
+      video.addEventListener('play', () => { $('playBtn').textContent = '❚❚'; $('playBtn').title = 'Pause'; $('playBtn').setAttribute('aria-label', 'Pause'); });
+      video.addEventListener('pause', () => { $('playBtn').textContent = '▶'; $('playBtn').title = 'Play'; $('playBtn').setAttribute('aria-label', 'Play'); });
+
+      function openCsvPicker() { $('csvInput').click(); }
+      $('importBtn').addEventListener('click', openCsvPicker);
+      $('csvInput').addEventListener('change', async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        try { importCsvText(await file.text()); }
+        catch (error) { notify(error.message || 'Unable to import CSV.', 'error'); }
+        event.target.value = '';
+      });
+      $('exportBtn').addEventListener('click', exportCsv);
+
+      $('classMapBtn').addEventListener('click', () => $('classMapInput').click());
+      $('classMapInput').addEventListener('change', async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        const phases = parseClassMap(await file.text());
+        if (!phases.length) notify('No class ID and label pairs were found.', 'error');
+        else {
+          state.phases = phases;
+          if (!phaseById(state.selectedPhaseId)?.name || !phases.some((phase) => phase.id === state.selectedPhaseId)) state.selectedPhaseId = phases[0].id;
+          renderPhaseMap();
+          renderAnnotations();
+          notify(`Loaded ${phases.length} classes from ${file.name}.`);
+        }
+        event.target.value = '';
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !$('folderConfirm').classList.contains('hidden')) {
+          closeFolderConfirm();
+          return;
+        }
+        const tag = event.target.tagName;
+        const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag);
+        const commandKey = event.ctrlKey || event.metaKey;
+        if (!isTyping && commandKey && event.key.toLowerCase() === 'z') {
+          event.preventDefault();
+          if (event.shiftKey) redoIntervalChange();
+          else undoIntervalChange();
+          return;
+        }
+        if (!isTyping && commandKey && event.key.toLowerCase() === 'y') {
+          event.preventDefault();
+          redoIntervalChange();
+          return;
+        }
+        if (isTyping) return;
+        if (event.code === 'Space') { event.preventDefault(); togglePlayback(); }
+        else if (event.key.toLowerCase() === 's') mark('start');
+        else if (event.key.toLowerCase() === 'e') mark('end');
+        else if (event.key === 'ArrowLeft') seekBy(event.shiftKey ? -2 : -1 / 30);
+        else if (event.key === 'ArrowRight') seekBy(event.shiftKey ? 2 : 1 / 30);
+      });
+
+      window.addEventListener('beforeunload', () => state.videos.forEach((item) => URL.revokeObjectURL(item.url)));
+
+      restorePanelLayout();
+      renderPhaseMap();
+      renderLibrary();
+      renderAnnotations();
+      renderMarks();
+      updateHistoryControls();
+      updateExportPath();
+    })();
+  </script>
+</body>
+</html>

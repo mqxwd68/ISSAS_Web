@@ -1,0 +1,136 @@
+{
+  "description": "",
+  "size": {
+    "height": 1080,
+    "width": 1920
+  },
+  "tags": [],
+  "objects": [
+    {
+      "classTitle": "Liver",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            92,
+            0
+          ],
+          [
+            1897,
+            924
+          ]
+        ],
+        "interior": []
+      },
+      "labelerLogin": "victor_cly",
+      "updatedAt": "2025-06-16T08:06:39.226Z",
+      "createdAt": "2025-06-16T08:06:39.226Z",
+      "id": 1700609826,
+      "classId": 13941794,
+      "geometryType": "rectangle",
+      "shape": "rectangle"
+    },
+    {
+      "classTitle": "Gallbladder",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            156,
+            844
+          ],
+          [
+            778,
+            1079
+          ]
+        ],
+        "interior": []
+      },
+      "labelerLogin": "victor_cly",
+      "updatedAt": "2025-06-16T08:06:45.873Z",
+      "createdAt": "2025-06-16T08:06:45.873Z",
+      "id": 1700609834,
+      "classId": 13956681,
+      "geometryType": "rectangle",
+      "shape": "rectangle"
+    },
+    {
+      "classTitle": "Hem-o-lok",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            792,
+            856
+          ],
+          [
+            1000,
+            1079
+          ]
+        ],
+        "interior": []
+      },
+      "labelerLogin": "victor_cly",
+      "updatedAt": "2025-06-16T08:07:02.544Z",
+      "createdAt": "2025-06-16T08:07:02.544Z",
+      "id": 1700609848,
+      "classId": 13956565,
+      "geometryType": "rectangle",
+      "shape": "rectangle"
+    },
+    {
+      "classTitle": "Hem-o-lok",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            1503,
+            683
+          ],
+          [
+            1684,
+            876
+          ]
+        ],
+        "interior": []
+      },
+      "labelerLogin": "victor_cly",
+      "updatedAt": "2025-06-16T08:07:04.658Z",
+      "createdAt": "2025-06-16T08:07:04.658Z",
+      "id": 1700609851,
+      "classId": 13956565,
+      "geometryType": "rectangle",
+      "shape": "rectangle"
+    },
+    {
+      "classTitle": "Pancreas",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            1090,
+            844
+          ],
+          [
+            1792,
+            1079
+          ]
+        ],
+        "interior": []
+      },
+      "labelerLogin": "victor_cly",
+      "updatedAt": "2025-06-16T08:07:29.613Z",
+      "createdAt": "2025-06-16T08:07:29.613Z",
+      "id": 1700609900,
+      "classId": 13941792,
+      "geometryType": "rectangle",
+      "shape": "rectangle"
+    }
+  ],
+  "customBigData": {}
+}

@@ -1,0 +1,35 @@
+{
+  "description": "",
+  "tags": [],
+  "size": {
+    "height": 1080,
+    "width": 1920
+  },
+  "objects": [
+    {
+      "id": 1696951058,
+      "classId": 13941750,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "crfprojectabml@gmail.com",
+      "createdAt": "2025-05-29T09:48:12.326Z",
+      "updatedAt": "2025-05-29T09:48:12.326Z",
+      "tags": [],
+      "classTitle": "Common hepatic artery",
+      "points": {
+        "exterior": [
+          [
+            1014,
+            349
+          ],
+          [
+            1446,
+            766
+          ]
+        ],
+        "interior": []
+      }
+    }
+  ]
+}

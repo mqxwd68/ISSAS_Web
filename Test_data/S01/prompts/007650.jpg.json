@@ -1,0 +1,85 @@
+{
+  "description": "",
+  "tags": [],
+  "size": {
+    "height": 1080,
+    "width": 1920
+  },
+  "objects": [
+    {
+      "id": 1700609180,
+      "classId": 13941794,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:02:51.797Z",
+      "updatedAt": "2025-06-16T08:02:51.797Z",
+      "tags": [],
+      "classTitle": "Liver",
+      "points": {
+        "exterior": [
+          [
+            2,
+            0
+          ],
+          [
+            1794,
+            652
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700609187,
+      "classId": 13956563,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:03:01.048Z",
+      "updatedAt": "2025-06-16T08:03:01.048Z",
+      "tags": [],
+      "classTitle": "Harmonic scalpel",
+      "points": {
+        "exterior": [
+          [
+            62,
+            490
+          ],
+          [
+            904,
+            937
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700609241,
+      "classId": 13941794,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:03:09.562Z",
+      "updatedAt": "2025-06-16T08:03:09.562Z",
+      "tags": [],
+      "classTitle": "Liver",
+      "points": {
+        "exterior": [
+          [
+            0,
+            470
+          ],
+          [
+            960,
+            1072
+          ]
+        ],
+        "interior": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,160 @@
+{
+  "description": "",
+  "tags": [],
+  "size": {
+    "height": 1080,
+    "width": 1920
+  },
+  "objects": [
+    {
+      "id": 1700610232,
+      "classId": 13956563,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:08:39.737Z",
+      "updatedAt": "2025-06-16T08:08:39.737Z",
+      "tags": [],
+      "classTitle": "Harmonic scalpel",
+      "points": {
+        "exterior": [
+          [
+            38,
+            356
+          ],
+          [
+            1168,
+            821
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610236,
+      "classId": 13956561,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:08:45.816Z",
+      "updatedAt": "2025-06-16T08:08:45.816Z",
+      "tags": [],
+      "classTitle": "Straight grasper",
+      "points": {
+        "exterior": [
+          [
+            1455,
+            88
+          ],
+          [
+            1905,
+            477
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610244,
+      "classId": 13941794,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:08:58.249Z",
+      "updatedAt": "2025-06-16T08:08:58.249Z",
+      "tags": [],
+      "classTitle": "Liver",
+      "points": {
+        "exterior": [
+          [
+            45,
+            0
+          ],
+          [
+            1434,
+            530
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610253,
+      "classId": 13956565,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:09:03.652Z",
+      "updatedAt": "2025-06-16T08:09:03.652Z",
+      "tags": [],
+      "classTitle": "Hem-o-lok",
+      "points": {
+        "exterior": [
+          [
+            1224,
+            142
+          ],
+          [
+            1445,
+            286
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610312,
+      "classId": 13941792,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:09:20.892Z",
+      "updatedAt": "2025-06-16T08:09:20.892Z",
+      "tags": [],
+      "classTitle": "Pancreas",
+      "points": {
+        "exterior": [
+          [
+            397,
+            555
+          ],
+          [
+            1708,
+            1079
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610318,
+      "classId": 13956565,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:09:24.398Z",
+      "updatedAt": "2025-06-16T08:09:24.398Z",
+      "tags": [],
+      "classTitle": "Hem-o-lok",
+      "points": {
+        "exterior": [
+          [
+            1656,
+            774
+          ],
+          [
+            1814,
+            924
+          ]
+        ],
+        "interior": []
+      }
+    }
+  ]
+}

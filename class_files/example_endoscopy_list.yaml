@@ -1,0 +1,6 @@
+# Simplest form: a plain list of names.
+# IDs are assigned automatically in order -> Polyp=1, Instrument=2, Mucosa=3, Lumen=4.
+- Polyp
+- Instrument
+- Mucosa
+- Lumen

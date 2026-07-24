@@ -1,0 +1,14 @@
+{
+  "Abdominal wall": 1,
+  "Liver": 2,
+  "Gastrointestinal tract": 3,
+  "Fat": 4,
+  "Grasper": 5,
+  "Connective tissue": 6,
+  "Blood": 7,
+  "Cystic duct": 8,
+  "L-hook electrocautery": 9,
+  "Gallbladder": 10,
+  "Hepatic vein": 11,
+  "Liver ligament": 12
+}

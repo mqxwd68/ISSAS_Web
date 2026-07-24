@@ -1,0 +1,33 @@
+{
+  "tissue": {
+    "Common hepatic artery": 1,
+    "Proper hepatic artery": 2,
+    "Gastroduodenal artery": 3,
+    "Left gastric artery": 4,
+    "Right gastric artery": 5,
+    "Left gastric vein": 6,
+    "Right gastric vein": 7,
+    "Pancreas": 8,
+    "Duodenal stump": 9,
+    "Liver": 10,
+    "Gallbladder": 11,
+    "Falciform ligament": 23,
+    "Stomach": 24,
+    "Blood pool": 26
+  },
+  "instrument": {
+    "Curved grasper": 12,
+    "Straight grasper": 13,
+    "Irrigation tube": 14,
+    "Harmonic scalpel": 15,
+    "Stapler": 16,
+    "Hem-o-lok": 17,
+    "Gauze": 18,
+    "Nndoscopic scissor": 19,
+    "Needle holder": 20,
+    "Needle": 21,
+    "Suture": 22,
+    "Hemoloc applier": 25,
+    "Ligasure": 27
+  }
+}

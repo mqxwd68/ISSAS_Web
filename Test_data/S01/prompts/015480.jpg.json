@@ -1,0 +1,229 @@
+{
+  "description": "",
+  "tags": [],
+  "size": {
+    "height": 1080,
+    "width": 1920
+  },
+  "objects": [
+    {
+      "id": 1696319541,
+      "classId": 13941794,
+      "objectId": null,
+      "description": "",
+      "geometryType": "polygon",
+      "labelerLogin": "crfprojectabml@gmail.com",
+      "createdAt": "2025-05-27T12:37:35.285Z",
+      "updatedAt": "2025-05-27T12:37:48.141Z",
+      "tags": [],
+      "classTitle": "Liver",
+      "points": {
+        "exterior": [
+          [
+            1668,
+            0
+          ],
+          [
+            1560,
+            113
+          ],
+          [
+            1498,
+            194
+          ],
+          [
+            1490,
+            224
+          ],
+          [
+            1100,
+            346
+          ],
+          [
+            1045,
+            309
+          ],
+          [
+            965,
+            273
+          ],
+          [
+            859,
+            258
+          ],
+          [
+            718,
+            256
+          ],
+          [
+            460,
+            249
+          ],
+          [
+            160,
+            246
+          ],
+          [
+            258,
+            159
+          ],
+          [
+            416,
+            48
+          ],
+          [
+            452,
+            0
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1696319562,
+      "classId": 13941794,
+      "objectId": null,
+      "description": "",
+      "geometryType": "polygon",
+      "labelerLogin": "crfprojectabml@gmail.com",
+      "createdAt": "2025-05-27T12:37:52.959Z",
+      "updatedAt": "2025-05-27T12:38:03.044Z",
+      "tags": [],
+      "classTitle": "Liver",
+      "points": {
+        "exterior": [
+          [
+            444,
+            404
+          ],
+          [
+            774,
+            466
+          ],
+          [
+            864,
+            496
+          ],
+          [
+            910,
+            514
+          ],
+          [
+            934,
+            502
+          ],
+          [
+            958,
+            515
+          ],
+          [
+            966,
+            484
+          ],
+          [
+            954,
+            459
+          ],
+          [
+            883,
+            386
+          ],
+          [
+            682,
+            384
+          ],
+          [
+            470,
+            402
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1696319707,
+      "classId": 13941792,
+      "objectId": null,
+      "description": "",
+      "geometryType": "polygon",
+      "labelerLogin": "crfprojectabml@gmail.com",
+      "createdAt": "2025-05-27T12:38:14.423Z",
+      "updatedAt": "2025-05-27T12:38:32.058Z",
+      "tags": [],
+      "classTitle": "Pancreas",
+      "points": {
+        "exterior": [
+          [
+            1560,
+            782
+          ],
+          [
+            1368,
+            791
+          ],
+          [
+            1348,
+            824
+          ],
+          [
+            1316,
+            850
+          ],
+          [
+            1205,
+            866
+          ],
+          [
+            1108,
+            850
+          ],
+          [
+            1088,
+            836
+          ],
+          [
+            859,
+            882
+          ],
+          [
+            848,
+            922
+          ],
+          [
+            904,
+            978
+          ],
+          [
+            988,
+            1038
+          ],
+          [
+            1034,
+            1070
+          ],
+          [
+            1626,
+            1079
+          ],
+          [
+            1688,
+            1011
+          ],
+          [
+            1722,
+            958
+          ],
+          [
+            1744,
+            902
+          ],
+          [
+            1748,
+            894
+          ]
+        ],
+        "interior": []
+      }
+    }
+  ]
+}

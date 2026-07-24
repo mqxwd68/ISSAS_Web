@@ -1,0 +1,68 @@
+{
+  "description": "",
+  "size": {
+    "height": 1080,
+    "width": 1920
+  },
+  "tags": [],
+  "objects": [
+    {
+      "classTitle": "Liver",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            140,
+            288
+          ],
+          [
+            776,
+            156
+          ],
+          [
+            1210,
+            122
+          ],
+          [
+            1284,
+            126
+          ],
+          [
+            1333,
+            82
+          ],
+          [
+            1354,
+            31
+          ],
+          [
+            1367,
+            0
+          ],
+          [
+            310,
+            0
+          ],
+          [
+            240,
+            65
+          ],
+          [
+            194,
+            136
+          ]
+        ],
+        "interior": []
+      },
+      "shape": "polygon",
+      "geometryType": "polygon",
+      "labelerLogin": "crfprojectabml@gmail.com",
+      "updatedAt": "2025-05-28T02:22:25.021Z",
+      "createdAt": "2025-05-28T02:22:18.488Z",
+      "id": 1696434131,
+      "classId": 13941794
+    }
+  ],
+  "customBigData": {}
+}

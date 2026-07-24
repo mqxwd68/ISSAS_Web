@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Local environments and editors
+.venv/
+.env
+.DS_Store
+.idea/
+.vscode/
+
+# Large SAM2 checkpoints (download separately)
+SAM_model/*.pt
+*.pth
+*.ckpt
+
+# Local annotation outputs and clinical data
+Results/
+ann/
+uploads/

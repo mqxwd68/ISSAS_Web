@@ -1,0 +1,672 @@
+{
+  "description": "",
+  "tags": [],
+  "size": {
+    "height": 1080,
+    "width": 1920
+  },
+  "objects": [
+    {
+      "id": 1696254934,
+      "classId": 13941792,
+      "objectId": null,
+      "description": "",
+      "geometryType": "polygon",
+      "labelerLogin": "crfprojectabml@gmail.com",
+      "createdAt": "2025-05-27T12:27:49.794Z",
+      "updatedAt": "2025-05-27T12:28:36.076Z",
+      "tags": [],
+      "classTitle": "Pancreas",
+      "points": {
+        "exterior": [
+          [
+            643,
+            866
+          ],
+          [
+            670,
+            861
+          ],
+          [
+            699,
+            897
+          ],
+          [
+            748,
+            954
+          ],
+          [
+            794,
+            958
+          ],
+          [
+            946,
+            940
+          ],
+          [
+            1079,
+            900
+          ],
+          [
+            1183,
+            828
+          ],
+          [
+            1258,
+            815
+          ],
+          [
+            1342,
+            778
+          ],
+          [
+            1476,
+            740
+          ],
+          [
+            1508,
+            712
+          ],
+          [
+            1454,
+            670
+          ],
+          [
+            1425,
+            629
+          ],
+          [
+            1483,
+            598
+          ],
+          [
+            1562,
+            561
+          ],
+          [
+            1652,
+            526
+          ],
+          [
+            1706,
+            506
+          ],
+          [
+            1768,
+            498
+          ],
+          [
+            1832,
+            494
+          ],
+          [
+            1830,
+            568
+          ],
+          [
+            1822,
+            652
+          ],
+          [
+            1806,
+            724
+          ],
+          [
+            1781,
+            824
+          ],
+          [
+            1740,
+            917
+          ],
+          [
+            1700,
+            987
+          ],
+          [
+            1648,
+            1057
+          ],
+          [
+            1634,
+            1079
+          ],
+          [
+            306,
+            1079
+          ],
+          [
+            374,
+            1008
+          ],
+          [
+            494,
+            1020
+          ],
+          [
+            600,
+            992
+          ],
+          [
+            643,
+            944
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1696255123,
+      "classId": 13941793,
+      "objectId": null,
+      "description": "",
+      "geometryType": "polygon",
+      "labelerLogin": "crfprojectabml@gmail.com",
+      "createdAt": "2025-05-27T12:29:13.106Z",
+      "updatedAt": "2025-05-27T12:29:37.138Z",
+      "tags": [],
+      "classTitle": "Duodenal stump",
+      "points": {
+        "exterior": [
+          [
+            304,
+            1079
+          ],
+          [
+            344,
+            1035
+          ],
+          [
+            374,
+            1008
+          ],
+          [
+            374,
+            1008
+          ],
+          [
+            494,
+            1020
+          ],
+          [
+            494,
+            1020
+          ],
+          [
+            600,
+            992
+          ],
+          [
+            600,
+            992
+          ],
+          [
+            643,
+            944
+          ],
+          [
+            643,
+            944
+          ],
+          [
+            643,
+            866
+          ],
+          [
+            670,
+            842
+          ],
+          [
+            656,
+            802
+          ],
+          [
+            626,
+            770
+          ],
+          [
+            607,
+            754
+          ],
+          [
+            595,
+            776
+          ],
+          [
+            562,
+            747
+          ],
+          [
+            537,
+            726
+          ],
+          [
+            542,
+            690
+          ],
+          [
+            469,
+            702
+          ],
+          [
+            406,
+            738
+          ],
+          [
+            375,
+            772
+          ],
+          [
+            368,
+            802
+          ],
+          [
+            286,
+            839
+          ],
+          [
+            252,
+            866
+          ],
+          [
+            224,
+            898
+          ],
+          [
+            196,
+            914
+          ],
+          [
+            222,
+            970
+          ],
+          [
+            262,
+            1024
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1696255333,
+      "classId": 13941794,
+      "objectId": null,
+      "description": "",
+      "geometryType": "polygon",
+      "labelerLogin": "crfprojectabml@gmail.com",
+      "createdAt": "2025-05-27T12:30:54.450Z",
+      "updatedAt": "2025-05-27T12:31:32.682Z",
+      "tags": [],
+      "classTitle": "Liver",
+      "points": {
+        "exterior": [
+          [
+            224,
+            94
+          ],
+          [
+            182,
+            160
+          ],
+          [
+            157,
+            218
+          ],
+          [
+            145,
+            268
+          ],
+          [
+            263,
+            242
+          ],
+          [
+            418,
+            227
+          ],
+          [
+            527,
+            232
+          ],
+          [
+            604,
+            251
+          ],
+          [
+            678,
+            288
+          ],
+          [
+            728,
+            343
+          ],
+          [
+            748,
+            376
+          ],
+          [
+            846,
+            372
+          ],
+          [
+            950,
+            324
+          ],
+          [
+            1072,
+            290
+          ],
+          [
+            1110,
+            326
+          ],
+          [
+            1204,
+            273
+          ],
+          [
+            1272,
+            224
+          ],
+          [
+            1309,
+            194
+          ],
+          [
+            1354,
+            76
+          ],
+          [
+            1434,
+            104
+          ],
+          [
+            1504,
+            110
+          ],
+          [
+            1638,
+            33
+          ],
+          [
+            1664,
+            16
+          ],
+          [
+            1655,
+            0
+          ],
+          [
+            377,
+            0
+          ],
+          [
+            365,
+            7
+          ],
+          [
+            474,
+            16
+          ],
+          [
+            606,
+            38
+          ],
+          [
+            652,
+            44
+          ],
+          [
+            670,
+            65
+          ],
+          [
+            670,
+            94
+          ],
+          [
+            636,
+            94
+          ],
+          [
+            558,
+            79
+          ],
+          [
+            479,
+            64
+          ],
+          [
+            411,
+            65
+          ],
+          [
+            332,
+            78
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1696255426,
+      "classId": 13941794,
+      "objectId": null,
+      "description": "",
+      "geometryType": "polygon",
+      "labelerLogin": "crfprojectabml@gmail.com",
+      "createdAt": "2025-05-27T12:31:37.973Z",
+      "updatedAt": "2025-05-27T12:31:51.242Z",
+      "tags": [],
+      "classTitle": "Liver",
+      "points": {
+        "exterior": [
+          [
+            1435,
+            387
+          ],
+          [
+            1526,
+            414
+          ],
+          [
+            1570,
+            433
+          ],
+          [
+            1585,
+            452
+          ],
+          [
+            1572,
+            503
+          ],
+          [
+            1529,
+            556
+          ],
+          [
+            1490,
+            583
+          ],
+          [
+            1425,
+            616
+          ],
+          [
+            1380,
+            570
+          ],
+          [
+            1368,
+            518
+          ],
+          [
+            1362,
+            472
+          ],
+          [
+            1389,
+            462
+          ],
+          [
+            1408,
+            437
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700607037,
+      "classId": 13941789,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T07:43:06.347Z",
+      "updatedAt": "2025-06-16T07:43:06.347Z",
+      "tags": [],
+      "classTitle": "Right gastric artery",
+      "points": {
+        "exterior": [
+          [
+            1073,
+            90
+          ],
+          [
+            1847,
+            512
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700607190,
+      "classId": 13956563,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T07:45:05.305Z",
+      "updatedAt": "2025-06-16T07:45:05.305Z",
+      "tags": [],
+      "classTitle": "Harmonic scalpel",
+      "points": {
+        "exterior": [
+          [
+            40,
+            261
+          ],
+          [
+            804,
+            562
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700607314,
+      "classId": 13941787,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T07:46:04.392Z",
+      "updatedAt": "2025-06-16T07:46:04.392Z",
+      "tags": [],
+      "classTitle": "Gastroduodenal artery",
+      "points": {
+        "exterior": [
+          [
+            876,
+            518
+          ],
+          [
+            1232,
+            937
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700607512,
+      "classId": 13941794,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T07:48:28.904Z",
+      "updatedAt": "2025-06-16T07:48:28.904Z",
+      "tags": [],
+      "classTitle": "Liver",
+      "points": {
+        "exterior": [
+          [
+            180,
+            14
+          ],
+          [
+            1736,
+            334
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700607758,
+      "classId": 13941793,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T07:50:10.294Z",
+      "updatedAt": "2025-06-16T07:50:10.294Z",
+      "tags": [],
+      "classTitle": "Duodenal stump",
+      "points": {
+        "exterior": [
+          [
+            195,
+            708
+          ],
+          [
+            728,
+            1046
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700607765,
+      "classId": 13941792,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T07:50:15.863Z",
+      "updatedAt": "2025-06-16T07:50:15.863Z",
+      "tags": [],
+      "classTitle": "Pancreas",
+      "points": {
+        "exterior": [
+          [
+            780,
+            738
+          ],
+          [
+            1851,
+            1064
+          ]
+        ],
+        "interior": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,260 @@
+{
+  "description": "",
+  "tags": [],
+  "size": {
+    "height": 1080,
+    "width": 1920
+  },
+  "objects": [
+    {
+      "id": 1700610812,
+      "classId": 13956561,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:11:14.835Z",
+      "updatedAt": "2025-06-16T08:11:14.835Z",
+      "tags": [],
+      "classTitle": "Straight grasper",
+      "points": {
+        "exterior": [
+          [
+            832,
+            613
+          ],
+          [
+            1919,
+            768
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610815,
+      "classId": 13956561,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:11:19.582Z",
+      "updatedAt": "2025-06-16T08:11:19.582Z",
+      "tags": [],
+      "classTitle": "Straight grasper",
+      "points": {
+        "exterior": [
+          [
+            1282,
+            427
+          ],
+          [
+            1919,
+            678
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610846,
+      "classId": 13956559,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:11:28.729Z",
+      "updatedAt": "2025-06-16T08:11:28.729Z",
+      "tags": [],
+      "classTitle": "Curved grasper",
+      "points": {
+        "exterior": [
+          [
+            78,
+            414
+          ],
+          [
+            1442,
+            580
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610849,
+      "classId": 13956681,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:11:35.013Z",
+      "updatedAt": "2025-06-16T08:11:35.013Z",
+      "tags": [],
+      "classTitle": "Gallbladder",
+      "points": {
+        "exterior": [
+          [
+            22,
+            430
+          ],
+          [
+            693,
+            886
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610860,
+      "classId": 13941794,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:11:46.177Z",
+      "updatedAt": "2025-06-16T08:11:46.177Z",
+      "tags": [],
+      "classTitle": "Liver",
+      "points": {
+        "exterior": [
+          [
+            85,
+            0
+          ],
+          [
+            1410,
+            547
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610875,
+      "classId": 13956687,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:11:54.203Z",
+      "updatedAt": "2025-06-16T08:11:54.203Z",
+      "tags": [],
+      "classTitle": "Gauze",
+      "points": {
+        "exterior": [
+          [
+            457,
+            452
+          ],
+          [
+            1364,
+            1072
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610877,
+      "classId": 13941792,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:12:04.038Z",
+      "updatedAt": "2025-06-16T08:12:04.038Z",
+      "tags": [],
+      "classTitle": "Pancreas",
+      "points": {
+        "exterior": [
+          [
+            698,
+            437
+          ],
+          [
+            1698,
+            1079
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610881,
+      "classId": 13941793,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:12:09.073Z",
+      "updatedAt": "2025-06-16T08:12:09.073Z",
+      "tags": [],
+      "classTitle": "Duodenal stump",
+      "points": {
+        "exterior": [
+          [
+            190,
+            708
+          ],
+          [
+            764,
+            1022
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610886,
+      "classId": 13956565,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:12:17.221Z",
+      "updatedAt": "2025-06-16T08:12:17.221Z",
+      "tags": [],
+      "classTitle": "Hem-o-lok",
+      "points": {
+        "exterior": [
+          [
+            412,
+            816
+          ],
+          [
+            620,
+            997
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610888,
+      "classId": 13956565,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:12:18.926Z",
+      "updatedAt": "2025-06-16T08:12:18.926Z",
+      "tags": [],
+      "classTitle": "Hem-o-lok",
+      "points": {
+        "exterior": [
+          [
+            302,
+            932
+          ],
+          [
+            504,
+            1052
+          ]
+        ],
+        "interior": []
+      }
+    }
+  ]
+}

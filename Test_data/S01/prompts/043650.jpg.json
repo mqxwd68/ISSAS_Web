@@ -1,0 +1,185 @@
+{
+  "description": "",
+  "tags": [],
+  "size": {
+    "height": 1080,
+    "width": 1920
+  },
+  "objects": [
+    {
+      "id": 1700610943,
+      "classId": 13956563,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:13:05.918Z",
+      "updatedAt": "2025-06-16T08:13:05.918Z",
+      "tags": [],
+      "classTitle": "Harmonic scalpel",
+      "points": {
+        "exterior": [
+          [
+            72,
+            216
+          ],
+          [
+            1296,
+            756
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610970,
+      "classId": 13956565,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:13:10.636Z",
+      "updatedAt": "2025-06-16T08:13:10.636Z",
+      "tags": [],
+      "classTitle": "Hem-o-lok",
+      "points": {
+        "exterior": [
+          [
+            724,
+            467
+          ],
+          [
+            1211,
+            718
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700610972,
+      "classId": 13956565,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:13:12.460Z",
+      "updatedAt": "2025-06-16T08:13:12.460Z",
+      "tags": [],
+      "classTitle": "Hem-o-lok",
+      "points": {
+        "exterior": [
+          [
+            806,
+            261
+          ],
+          [
+            1015,
+            426
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700611038,
+      "classId": 13956561,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:13:17.612Z",
+      "updatedAt": "2025-06-16T08:13:17.612Z",
+      "tags": [],
+      "classTitle": "Straight grasper",
+      "points": {
+        "exterior": [
+          [
+            1342,
+            701
+          ],
+          [
+            1919,
+            1072
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700611041,
+      "classId": 13956561,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:13:19.466Z",
+      "updatedAt": "2025-06-16T08:13:19.466Z",
+      "tags": [],
+      "classTitle": "Straight grasper",
+      "points": {
+        "exterior": [
+          [
+            1440,
+            0
+          ],
+          [
+            1919,
+            452
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700611107,
+      "classId": 13941794,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:13:31.181Z",
+      "updatedAt": "2025-06-16T08:13:31.181Z",
+      "tags": [],
+      "classTitle": "Liver",
+      "points": {
+        "exterior": [
+          [
+            82,
+            0
+          ],
+          [
+            1397,
+            510
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700611149,
+      "classId": 13941750,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:13:46.349Z",
+      "updatedAt": "2025-06-16T08:13:46.349Z",
+      "tags": [],
+      "classTitle": "Common hepatic artery",
+      "points": {
+        "exterior": [
+          [
+            316,
+            562
+          ],
+          [
+            1796,
+            1075
+          ]
+        ],
+        "interior": []
+      }
+    }
+  ]
+}

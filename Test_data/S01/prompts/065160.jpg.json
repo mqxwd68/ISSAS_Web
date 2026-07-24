@@ -1,0 +1,211 @@
+{
+  "description": "",
+  "size": {
+    "height": 1080,
+    "width": 1920
+  },
+  "tags": [],
+  "objects": [
+    {
+      "classTitle": "Curved grasper",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            55,
+            412
+          ],
+          [
+            1055,
+            700
+          ]
+        ],
+        "interior": []
+      },
+      "labelerLogin": "victor_cly",
+      "updatedAt": "2025-06-16T08:18:04.840Z",
+      "createdAt": "2025-06-16T08:18:04.840Z",
+      "id": 1700613173,
+      "classId": 13956559,
+      "geometryType": "rectangle",
+      "shape": "rectangle"
+    },
+    {
+      "classTitle": "Harmonic scalpel",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            65,
+            704
+          ],
+          [
+            1150,
+            1079
+          ]
+        ],
+        "interior": []
+      },
+      "labelerLogin": "victor_cly",
+      "updatedAt": "2025-06-16T08:18:10.403Z",
+      "createdAt": "2025-06-16T08:18:10.403Z",
+      "id": 1700613179,
+      "classId": 13956563,
+      "geometryType": "rectangle",
+      "shape": "rectangle"
+    },
+    {
+      "classTitle": "Irrigation tube",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            1390,
+            704
+          ],
+          [
+            1809,
+            1079
+          ]
+        ],
+        "interior": []
+      },
+      "labelerLogin": "victor_cly",
+      "updatedAt": "2025-06-16T08:18:14.706Z",
+      "createdAt": "2025-06-16T08:18:14.706Z",
+      "id": 1700613183,
+      "classId": 13956562,
+      "geometryType": "rectangle",
+      "shape": "rectangle"
+    },
+    {
+      "classTitle": "Liver",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            95,
+            0
+          ],
+          [
+            1397,
+            534
+          ]
+        ],
+        "interior": []
+      },
+      "labelerLogin": "victor_cly",
+      "updatedAt": "2025-06-16T08:18:25.061Z",
+      "createdAt": "2025-06-16T08:18:25.061Z",
+      "id": 1700613192,
+      "classId": 13941794,
+      "geometryType": "rectangle",
+      "shape": "rectangle"
+    },
+    {
+      "classTitle": "Pancreas",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            156,
+            454
+          ],
+          [
+            1397,
+            972
+          ]
+        ],
+        "interior": []
+      },
+      "labelerLogin": "victor_cly",
+      "updatedAt": "2025-06-16T08:18:35.834Z",
+      "createdAt": "2025-06-16T08:18:35.834Z",
+      "id": 1700613212,
+      "classId": 13941792,
+      "geometryType": "rectangle",
+      "shape": "rectangle"
+    },
+    {
+      "classTitle": "Gauze",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            588,
+            764
+          ],
+          [
+            1578,
+            1079
+          ]
+        ],
+        "interior": []
+      },
+      "labelerLogin": "victor_cly",
+      "updatedAt": "2025-06-16T08:18:39.823Z",
+      "createdAt": "2025-06-16T08:18:39.823Z",
+      "id": 1700613215,
+      "classId": 13956687,
+      "geometryType": "rectangle",
+      "shape": "rectangle"
+    },
+    {
+      "classTitle": "Hem-o-lok",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            146,
+            308
+          ],
+          [
+            412,
+            452
+          ]
+        ],
+        "interior": []
+      },
+      "labelerLogin": "victor_cly",
+      "updatedAt": "2025-06-16T08:18:46.418Z",
+      "createdAt": "2025-06-16T08:18:46.418Z",
+      "id": 1700613238,
+      "classId": 13956565,
+      "geometryType": "rectangle",
+      "shape": "rectangle"
+    },
+    {
+      "classTitle": "Common hepatic artery",
+      "description": "",
+      "tags": [],
+      "points": {
+        "exterior": [
+          [
+            402,
+            392
+          ],
+          [
+            957,
+            560
+          ]
+        ],
+        "interior": []
+      },
+      "labelerLogin": "victor_cly",
+      "updatedAt": "2025-06-16T08:19:00.092Z",
+      "createdAt": "2025-06-16T08:19:00.092Z",
+      "id": 1700613244,
+      "classId": 13941750,
+      "geometryType": "rectangle",
+      "shape": "rectangle"
+    }
+  ],
+  "customBigData": {}
+}

@@ -1,0 +1,185 @@
+{
+  "description": "",
+  "tags": [],
+  "size": {
+    "height": 1080,
+    "width": 1920
+  },
+  "objects": [
+    {
+      "id": 1700613265,
+      "classId": 13956559,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:19:32.493Z",
+      "updatedAt": "2025-06-16T08:19:32.493Z",
+      "tags": [],
+      "classTitle": "Curved grasper",
+      "points": {
+        "exterior": [
+          [
+            120,
+            68
+          ],
+          [
+            1302,
+            474
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700613266,
+      "classId": 13956562,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:19:37.756Z",
+      "updatedAt": "2025-06-16T08:19:37.756Z",
+      "tags": [],
+      "classTitle": "Irrigation tube",
+      "points": {
+        "exterior": [
+          [
+            1076,
+            602
+          ],
+          [
+            1671,
+            1079
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700613289,
+      "classId": 13956561,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:19:43.963Z",
+      "updatedAt": "2025-06-16T08:19:43.963Z",
+      "tags": [],
+      "classTitle": "Straight grasper",
+      "points": {
+        "exterior": [
+          [
+            1342,
+            2
+          ],
+          [
+            1918,
+            588
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700613296,
+      "classId": 13941792,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:19:54.582Z",
+      "updatedAt": "2025-06-16T08:19:54.582Z",
+      "tags": [],
+      "classTitle": "Pancreas",
+      "points": {
+        "exterior": [
+          [
+            133,
+            590
+          ],
+          [
+            1384,
+            1079
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700613301,
+      "classId": 13941790,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:20:04.292Z",
+      "updatedAt": "2025-06-16T08:20:04.292Z",
+      "tags": [],
+      "classTitle": "Left gastric vein",
+      "points": {
+        "exterior": [
+          [
+            776,
+            399
+          ],
+          [
+            1118,
+            680
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700613304,
+      "classId": 13941750,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:20:10.157Z",
+      "updatedAt": "2025-06-16T08:20:10.157Z",
+      "tags": [],
+      "classTitle": "Common hepatic artery",
+      "points": {
+        "exterior": [
+          [
+            136,
+            550
+          ],
+          [
+            859,
+            766
+          ]
+        ],
+        "interior": []
+      }
+    },
+    {
+      "id": 1700613307,
+      "classId": 13941794,
+      "objectId": null,
+      "description": "",
+      "geometryType": "rectangle",
+      "labelerLogin": "victor_cly",
+      "createdAt": "2025-06-16T08:20:16.485Z",
+      "updatedAt": "2025-06-16T08:20:16.485Z",
+      "tags": [],
+      "classTitle": "Liver",
+      "points": {
+        "exterior": [
+          [
+            140,
+            0
+          ],
+          [
+            1065,
+            537
+          ]
+        ],
+        "interior": []
+      }
+    }
+  ]
+}

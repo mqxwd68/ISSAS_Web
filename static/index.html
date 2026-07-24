@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ISSAS — Interactive Annotation</title>
+  <link rel="stylesheet" href="/static/style.css?v=20260722d" />
+</head>
+<body>
+  <!-- ===== Top bar ===== -->
+  <header class="topbar">
+    <button id="filesToggle" class="btn small" title="File tree">🗂 Files</button>
+    <div class="brand">
+      <span class="brand-mark">◐</span>
+      <span class="brand-name">ISSAS</span>
+      <span class="brand-sub">interactive segmentation annotation</span>
+    </div>
+    <div class="session">
+      <input id="folderPath" class="path-input" placeholder="/path/to/frame/folder" spellcheck="false" />
+      <button id="browseBtn" class="btn">Browse…</button>
+      <button id="openBtn" class="btn btn-accent">Open folder</button>
+    </div>
+    <div class="status">
+      <label class="user-field" style="display:none" title="Username used for save paths (<user>/<case>/masks) and Review">
+        <span>user</span><input id="userField" class="path-input tiny" spellcheck="false" />
+      </label>
+      <a href="/workflow" target="_blank" rel="noopener" class="btn small workflow-link" title="Open temporal workflow annotation">Workflow</a>
+      <button id="reviewBtn" class="btn small">Review</button>
+      <span id="modeBadge" class="badge badge-muted">no session</span>
+      <span id="frameName" class="mono muted"></span>
+    </div>
+  </header>
+
+  <!-- ===== Middle row: file drawer + workspace ===== -->
+  <div class="midrow">
+  <!-- File-tree drawer (foldable to a tab) -->
+  <aside id="fileDrawer" class="file-drawer folded">
+    <button id="fdTab" class="fd-tab">▸<span>Files</span></button>
+    <div class="fd-body">
+      <div class="fd-head">
+        <span>File tree</span>
+        <button id="fdFold" class="hud-btn" title="Fold">⟨</button>
+      </div>
+      <div class="fd-rootrow">
+        <button id="fdUp" class="btn small" title="Parent folder">↑</button>
+        <input id="fdRoot" class="path-input small" placeholder="data root" spellcheck="false" />
+        <button id="fdRootBrowse" class="btn small">📁</button>
+        <button id="fdRootSet" class="btn small btn-accent">Set</button>
+      </div>
+      <div id="fdTree" class="fd-tree"></div>
+      <div class="fd-hint mono muted">double-click a folder to load its images · right-click for options</div>
+    </div>
+  </aside>
+  <div id="fdContextMenu" class="fd-ctx hidden"></div>
+
+  <!-- ===== Main 3-column workspace ===== -->
+  <main class="workspace">
+    <!-- Left: objects & actions -->
+    <aside class="panel panel-left">
+      <div class="setup">
+        <button id="setupToggle" class="setup-toggle"><span class="setup-title">⚙ Setup</span><span class="chev">▸</span></button>
+        <div id="setupBody" class="setup-body hidden">
+          <div class="setup-group">
+            <div class="setup-label">Classes <span id="classInfo" class="mono muted"></span></div>
+            <div id="setupClasses" class="setup-badge mono" title="">classes</div>
+            <input type="file" id="classFile" accept=".json,.yaml,.yml" hidden />
+            <button id="classBrowseBtn" class="btn small block">Choose on server…</button>
+            <button id="classFileBtn" class="btn small block">Upload JSON / YAML…</button>
+            <button id="classResetBtn" class="btn small block">Reset to default</button>
+          </div>
+          <div class="setup-group">
+            <div class="setup-label">SAM model <span id="modelInfo" class="mono muted"></span></div>
+            <div class="dir-row"><input id="modelPath" class="path-input small" placeholder="checkpoint .pt path" spellcheck="false" /><button id="modelBrowseBtn" class="btn small">📁</button></div>
+            <div class="dir-row"><input id="modelCfg" class="path-input small" placeholder="config .yaml (optional)" spellcheck="false" /><button id="modelCfgBrowseBtn" class="btn small">📁</button></div>
+            <button id="modelLoadBtn" class="btn small btn-accent block">Load model</button>
+          </div>
+          <div class="setup-warn mono">Changing classes or model resets the current annotations.</div>
+        </div>
+      </div>
+      <div class="panel-head">Objects</div>
+      <div class="actions">
+        <button id="addObjBtn" class="btn btn-accent block">+ Add object</button>
+        <div class="btn-split">
+          <button id="importPromptsBtn" class="btn block">Import prompts</button>
+          <button id="importPromptsDirBtn" class="split-side" title="Change prompts folder…" aria-label="Change prompts folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4L11 8.5h8.5A1.5 1.5 0 0 1 21 10v7.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg></button>
+        </div>
+        <div class="btn-split">
+          <button id="importMaskBtn" class="btn block">Import mask</button>
+          <button id="importMaskDirBtn" class="split-side" title="Change mask folder…" aria-label="Change mask folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4L11 8.5h8.5A1.5 1.5 0 0 1 21 10v7.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg></button>
+        </div>
+        <button id="propBtn" class="btn block toggle on">Propagation: ON</button>
+        <button id="reseedBtn" class="btn block">Re-propagate from here →</button>
+      </div>
+      <div id="objList" class="obj-list"></div>
+    </aside>
+
+    <!-- Center: canvas -->
+    <section class="stage">
+      <div id="viewport" class="viewport">
+        <canvas id="canvas"></canvas>
+        <div id="emptyHint" class="empty-hint">
+          <div class="empty-title">No frames loaded</div>
+          <div class="empty-body">Enter a folder path above and choose <b>Open folder</b>.</div>
+        </div>
+        <!-- Zoom HUD -->
+        <div class="zoom-hud">
+          <button id="zoomOut" class="hud-btn">−</button>
+          <input id="zoomSlider" class="zoom-slider" type="range" min="10" max="800" value="100" />
+          <button id="zoomIn" class="hud-btn">+</button>
+          <span id="zoomLabel" class="mono zoom-label">100%</span>
+          <button id="fitBtn" class="hud-btn wide">Fit</button>
+          <button id="oneToOneBtn" class="hud-btn wide">100%</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right: tools -->
+    <aside class="panel panel-right">
+      <div class="panel-head">Tools</div>
+
+      <div class="tool-group">
+        <div class="group-label">Visualization</div>
+        <label class="switch"><span>Mask fill</span><input type="checkbox" id="visFill" checked /><i></i></label>
+        <label class="switch"><span>Boundary</span><input type="checkbox" id="visBoundary" checked /><i></i></label>
+        <label class="switch"><span>Track IDs</span><input type="checkbox" id="visIds" checked /><i></i></label>
+        <label class="switch"><span>Points</span><input type="checkbox" id="visPoints" checked /><i></i></label>
+        <label class="switch"><span>Boxes</span><input type="checkbox" id="visBoxes" /><i></i></label>
+      </div>
+
+      <div class="tool-group">
+        <div class="group-label">Brush</div>
+        <button id="brushBtn" class="btn block toggle">Brush: OFF</button>
+        <div class="row">
+          <span class="row-label">Size</span>
+          <input id="brushSlider" class="flex-slider" type="range" min="5" max="120" value="20" />
+          <span id="brushLabel" class="mono val">20</span>
+        </div>
+        <div class="hint">L-drag add · R-drag erase</div>
+      </div>
+
+      <div class="tool-group">
+        <div class="group-label">Post-processing</div>
+        <div class="stepper">
+          <span class="stepper-name">Gaussian</span>
+          <button class="hud-btn" data-pp="gaussian" data-d="-2">↓</button>
+          <span id="gaussVal" class="mono val">17</span>
+          <button class="hud-btn" data-pp="gaussian" data-d="2">↑</button>
+          <button class="apply" data-apply="gaussian" title="Apply (G)">G</button>
+        </div>
+        <div class="stepper">
+          <span class="stepper-name">Morphology</span>
+          <button class="hud-btn" data-pp="morph" data-d="-2">↓</button>
+          <span id="morphVal" class="mono val">17</span>
+          <button class="hud-btn" data-pp="morph" data-d="2">↑</button>
+          <button class="apply" data-apply="morph" title="Apply (F)">F</button>
+        </div>
+        <div class="stepper">
+          <span class="stepper-name">Components</span>
+          <button class="hud-btn" data-pp="components" data-d="-1">↓</button>
+          <span id="compVal" class="mono val">1</span>
+          <button class="hud-btn" data-pp="components" data-d="1">↑</button>
+          <button class="apply" data-apply="components" title="Apply (H)">H</button>
+        </div>
+      </div>
+
+      <div class="tool-group">
+        <div class="group-label">Export</div>
+        <div class="dir-row">
+          <input id="pngDir" class="path-input small" placeholder="PNG output dir" spellcheck="false" />
+          <button id="pngBrowse" class="btn small">📁</button>
+        </div>
+        <div class="dir-row">
+          <input id="yoloDir" class="path-input small" placeholder="YOLO output dir" spellcheck="false" />
+          <button id="yoloBrowse" class="btn small">📁</button>
+        </div>
+        <label class="switch" style="padding:6px 0"><span>PNG only (lossless)</span><input type="checkbox" id="exportPngOnly" /><i></i></label>
+        <button id="saveBtn" class="btn btn-accent block">Save masks (S)</button>
+        <button id="diceBtn" class="btn block">Dice: SAM2 vs final</button>
+        <label class="switch" style="padding:6px 0"><span>Save SAM-raw folder</span><input type="checkbox" id="exportSamRaw" checked /><i></i></label>
+      </div>
+    </aside>
+  </main>
+  </div>
+
+  <!-- ===== Bottom bar: frame nav + shortcut legend + minimap ===== -->
+  <footer class="bottombar">
+    <div class="bottom-main">
+      <div class="nav">
+        <button id="prevBtn" class="btn small">⬅ Prev</button>
+        <button id="nextBtn" class="btn small">Next ➡</button>
+        <input id="frameSlider" class="frame-slider" type="range" min="0" max="0" value="0" />
+        <span id="position" class="mono muted">0 / 0</span>
+        <input id="jumpInput" class="path-input tiny" placeholder="jump" spellcheck="false" />
+        <button id="jumpBtn" class="btn small">Go</button>
+      </div>
+      <div class="legend">
+        <span class="kc"><span class="cap">L</span>point</span>
+        <span class="kc"><span class="cap">R</span>neg</span>
+        <span class="kc"><span class="cap">⌃</span>drag box</span>
+        <span class="kc"><span class="cap">⌃</span>scroll zoom</span>
+        <span class="kc"><span class="cap">Space</span>drag&nbsp;=&nbsp;pan</span>
+        <span class="kc"><span class="cap">A</span><span class="cap">D</span>frames</span>
+        <span class="kc"><span class="cap">W</span><span class="cap">S</span>objects</span>
+        <span class="kc"><span class="cap">B</span>brush</span>
+        <span class="kc"><span class="cap">T</span>hide</span>
+        <span class="kc"><span class="cap">Y</span>hide all</span>
+        <span class="kc"><span class="cap">G</span>gaussian</span>
+        <span class="kc"><span class="cap">F</span>morph</span>
+        <span class="kc"><span class="cap">H</span>components</span>
+        <span class="kc"><span class="cap">R</span>reset</span>
+        <span class="kc"><span class="cap">Q</span>import</span>
+        <span class="kc"><span class="cap">⌃Z</span>undo</span>
+        <span class="kc"><span class="cap">⌃S</span>save</span>
+      </div>
+    </div>
+    <div class="minimap-wrap">
+      <canvas id="minimap" class="minimap"></canvas>
+    </div>
+  </footer>
+
+  <!-- save success flash -->
+  <div id="saveFlash" class="save-flash"></div>
+
+  <!-- Add-object class picker -->
+  <div id="addObj" class="modal hidden">
+    <div class="modal-card modal-narrow">
+      <div class="modal-head">
+        <span>Add object</span>
+        <button id="addObjClose" class="hud-btn">✕</button>
+      </div>
+      <div class="addobj-search">
+        <input id="classSearch" class="path-input" placeholder="Search classes or type a custom name…" spellcheck="false" />
+      </div>
+      <div class="addobj-list" id="classList"></div>
+    </div>
+  </div>
+
+  <!-- Folder browser (server-side directory picker) -->
+  <div id="browser" class="modal hidden">
+    <div class="modal-card modal-wide">
+      <div class="modal-head">
+        <span id="browserTitle">Select frame folder</span>
+        <button id="browserClose" class="hud-btn">✕</button>
+      </div>
+      <div class="browser-pathrow">
+        <textarea class="browser-path mono" id="browserPath" rows="1" wrap="soft" spellcheck="false" placeholder="type or paste a path, press Enter"></textarea>
+        <button id="browserPathGo" class="btn small" title="Go to path">Go</button>
+        <button id="browserPathCopy" class="btn small" title="Copy path">⧉</button>
+      </div>
+      <div class="browser-list" id="browserList"></div>
+      <div class="browser-foot">
+        <button id="browserNewFolder" class="btn small">＋ New folder</button>
+        <span id="browserInfo" class="mono muted"></span>
+        <button id="browserSelect" class="btn btn-accent">Select this folder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dice report -->
+  <div id="diceModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span>Dice — SAM2 initial vs. human-final</span>
+        <button id="diceClose" class="hud-btn">✕</button>
+      </div>
+      <div id="diceBody" class="dice-body"></div>
+      <div class="browser-foot">
+        <span class="mono muted">Captured live this session · export is the paper's source of truth</span>
+        <span style="display:flex; gap:8px">
+          <button id="diceCsv" class="btn small">Export CSV</button>
+          <button id="diceJson" class="btn small">Export JSON</button>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Review mode -->
+  <div id="reviewModal" class="modal hidden">
+    <div class="modal-card review-card">
+      <div class="modal-head">
+        <span>Review — inter / intra-annotator agreement</span>
+        <button id="reviewClose" class="hud-btn">✕</button>
+      </div>
+      <div class="review-controls">
+        <div class="dir-row">
+          <input id="reviewRoot" class="path-input small" placeholder="Results root (ROOT/&lt;annotator&gt;/&lt;case&gt;/&lt;frame&gt;.png)" spellcheck="false" />
+          <button id="reviewBrowse" class="btn small">📁</button>
+          <button id="reviewScan" class="btn small btn-accent">Scan</button>
+        </div>
+        <div class="review-pickrow">
+          <div class="review-pick">
+            <label class="rlabel">Case</label>
+            <select id="reviewCase" class="rselect"></select>
+          </div>
+          <div class="review-pick grow">
+            <label class="rlabel">Annotators</label>
+            <div id="reviewAnns" class="rchecks"><span class="muted">Scan a root to list annotators.</span></div>
+          </div>
+          <button id="reviewCompute" class="btn btn-accent" style="white-space:nowrap">Compute agreement</button>
+        </div>
+        <div class="review-refine fold" id="refineFold">
+          <button class="fold-tab" id="refineFoldToggle"><span class="chev">▸</span> Refine one annotator in the editor →</button>
+          <div class="fold-body hidden">
+            <div class="dir-row">
+              <select id="refineAnn" class="rselect"></select>
+              <input id="refineFrames" class="path-input small" placeholder="Frames folder (images) for this case" spellcheck="false" />
+              <button id="refineFramesBrowse" class="btn small">📁</button>
+            </div>
+            <div class="dir-row">
+              <input id="refineReviewer" class="path-input small" placeholder="reviewer id" value="reviewer" spellcheck="false" />
+              <button id="refineGo" class="btn small btn-accent">Load into editor</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="reviewResults" class="review-results hidden">
+        <div class="review-toolbar">
+          <span id="reviewPairs" class="review-pairs"></span>
+          <div class="seg" id="reviewKind"><button data-k="inter" class="on">Inter</button><button data-k="intra">Intra</button><button data-k="all">All</button></div>
+          <div class="seg" id="reviewMetric"><button data-m="dice" class="on">Dice</button><button data-m="iou">IoU</button><button data-m="hd">HD</button><button data-m="hd95">HD95</button></div>
+          <div class="seg" id="reviewSort"><button data-s="value-desc" class="on">▼ val</button><button data-s="value-asc">▲ val</button><button data-s="name">A–Z</button><button data-s="n">n</button></div>
+          <div class="seg" id="reviewAgg" title="How per-class scores are aggregated across cases">
+            <button data-g="macro" class="on" title="Macro — per-case averaged.&#10;Average each class's per-case means, so every case counts equally regardless of size.&#10;Example: a class scores 0.90 in a 50-frame case and 0.60 in a 2-frame case → macro = (0.90 + 0.60) / 2 = 0.75.">Macro</button>
+            <button data-g="micro" title="Micro — pooled.&#10;Average over every sample (pair × frame) across all cases, so larger cases dominate.&#10;Same example → micro ≈ (0.90×50 + 0.60×2) / 52 ≈ 0.888.">Micro</button>
+          </div>
+        </div>
+        <div class="review-toolbar2">
+          <span id="reviewOverall" class="mono muted"></span>
+          <span style="margin-left:auto; display:flex; gap:8px">
+            <button id="reviewCompareBtn" class="btn small btn-accent">Compare in frames →</button>
+            <button id="reviewCsv" class="btn small">CSV</button>
+            <button id="reviewJson" class="btn small">JSON</button>
+          </span>
+        </div>
+        <div class="rsection" id="rsecClass">
+          <button class="rsec-head" data-sec="rsecClass"><span class="chev">▾</span> Per class</button>
+          <div class="rsec-body"><div id="reviewChart" class="review-chart"></div></div>
+        </div>
+        <div class="rsection" id="rsecTable">
+          <button class="rsec-head" data-sec="rsecTable"><span class="chev">▾</span> Per-class table</button>
+          <div class="rsec-body"><div class="review-tablewrap"><table id="reviewTable" class="dice-table"></table></div></div>
+        </div>
+        <div class="rsection hidden" id="rsecCase">
+          <button class="rsec-head" data-sec="rsecCase"><span class="chev">▾</span> Per case</button>
+          <div class="rsec-body" id="reviewCaseWrap"><div id="reviewCaseChart" class="review-chart"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Compare — visual diff / dual-screen -->
+  <div id="compareModal" class="modal hidden">
+    <div class="modal-card compare-card">
+      <div class="modal-head">
+        <span>Compare masks</span>
+        <span style="display:flex; gap:8px; align-items:center; margin-left:auto">
+          <button id="cmpRefineA" class="btn small">Refine A →</button>
+          <button id="cmpRefineB" class="btn small">Refine B →</button>
+          <div class="seg" id="cmpMode"><button data-cm="overlay" class="on">Overlay</button><button data-cm="diff">Diff</button><button data-cm="dual">Dual</button></div>
+          <button id="cmpClose" class="hud-btn">✕</button>
+        </span>
+      </div>
+      <div class="compare-sub">
+        <select id="cmpA" class="rselect"></select>
+        <span class="muted">vs</span>
+        <select id="cmpB" class="rselect"></select>
+        <input id="cmpFramesDir" class="path-input small" placeholder="Frames folder (background image, optional)" spellcheck="false" />
+        <button id="cmpFramesBrowse" class="btn small">📁</button>
+        <label class="rcheck" style="white-space:nowrap"><input type="checkbox" id="cmpShowFrame" checked><span>Show frame</span></label>
+        <span id="cmpLegend" class="cmp-legend"></span>
+      </div>
+      <div class="compare-body">
+        <div id="cmpStage" class="cmp-stage"><canvas id="cmpCanvas"></canvas></div>
+        <div class="cmp-side">
+          <div class="cmp-side-h">
+            <label class="cmp-allchk"><input type="checkbox" id="cmpAll" checked><span>All</span></label>
+            <span class="cmp-sort" id="cmpSort">
+              <button data-cs="class_name">Name</button><button data-cs="dice" class="on">Dice</button><button data-cs="iou">IoU</button><button data-cs="hd95">HD</button>
+            </span>
+          </div>
+          <div id="cmpClasses" class="cmp-classes"></div>
+        </div>
+      </div>
+      <div class="cmp-scores-wrap"><span class="cmp-scores-label">Dice / frame</span><canvas id="cmpScores"></canvas></div>
+      <div class="compare-foot">
+        <button id="cmpPrev" class="btn small">⬅ Prev</button>
+        <button id="cmpNext" class="btn small">Next ➡</button>
+        <input id="cmpSlider" class="frame-slider" type="range" min="0" max="0" value="0" />
+        <span id="cmpPos" class="mono muted">0 / 0</span>
+        <span id="cmpFrameName" class="mono muted"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reusable confirm dialog -->
+  <div id="uiDialog" class="modal hidden">
+    <div class="modal-card modal-narrow">
+      <div class="modal-head"><span id="uiDialogTitle">Confirm</span></div>
+      <div id="uiDialogBody" class="reminder-body"></div>
+      <div class="reminder-foot">
+        <button id="uiDialogCancel" class="btn">Cancel</button>
+        <button id="uiDialogOk" class="btn btn-accent">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Unsaved-changes reminder -->
+  <div id="saveReminder" class="modal hidden">
+    <div class="modal-card modal-narrow">
+      <div class="modal-head"><span>Unsaved changes</span></div>
+      <div class="reminder-body">You've edited this frame but haven't saved it yet. What would you like to do before leaving?</div>
+      <div class="reminder-foot">
+        <button id="remCancel" class="btn">Cancel</button>
+        <button id="remIgnore" class="btn">Leave without saving</button>
+        <button id="remSave" class="btn btn-accent">Save &amp; continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="overlay" class="overlay hidden">
+    <div class="overlay-card">
+      <div class="spinner"></div>
+      <div id="overlayText">Initializing SAM2…</div>
+      <div id="overlayBar" class="overlay-bar hidden"><div id="overlayBarFill"></div></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/app.js?v=20260722d"></script>
+</body>
+</html>
