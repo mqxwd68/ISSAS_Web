@@ -20,3 +20,4 @@ SAM_model/*.pt
 Results/
 ann/
 uploads/
+error/
