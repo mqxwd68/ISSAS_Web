@@ -55,7 +55,7 @@ const S = {
 const V = {
   available: false, configured: false, fps: 25, duration: 0, name: null, caseName: null,
   clipStart: 0, clipEnd: 20, center: 0, mode: 'float', open: false,
-  sourceKey: null,
+  sourceKey: null, seekToken: 0, seekPending: false,
 };
 
 // ---------- canvas ----------
@@ -783,6 +783,7 @@ function applyVideoStatus(j){
   if(!V.available){ closeContextVideo(); contextVideo.removeAttribute('src'); V.sourceKey=null; return; }
   const key=`${j.directory||''}|${j.name||''}`;
   if(V.sourceKey!==key){
+    V.seekToken++; V.seekPending=false;
     V.sourceKey=key;
     contextVideo.src='/api/video/file?key='+encodeURIComponent(key);
     contextVideo.load();
@@ -815,7 +816,8 @@ function syncVideoSplitDirection(){
   stage.classList.toggle('video-narrow',V.open&&V.mode==='split'&&stage.clientWidth<720);
 }
 function closeContextVideo(){
-  V.open=false; contextVideo.pause();
+  V.open=false; V.seekToken++; V.seekPending=false; contextVideo.pause();
+  $('videoLoading').classList.add('hidden');
   const win=$('videoWindow'); win.classList.add('hidden');
   const stage=win.closest('.stage'); stage.classList.remove('video-split','video-main','video-narrow');
   requestAnimationFrame(resizeCanvas);
@@ -826,6 +828,81 @@ function updateVideoControls(){
   $('videoTime').textContent=`${videoTime(t)} / ${videoTime(V.clipEnd)}`;
   $('videoPlayPause').textContent=contextVideo.paused?'\u25B6':'\u23F8';
 }
+function waitForVideoMetadata(token){
+  if(contextVideo.readyState>=1 && Number.isFinite(contextVideo.duration)) return Promise.resolve(true);
+  return new Promise(resolve=>{
+    let timer=null;
+    const done=ok=>{
+      contextVideo.removeEventListener('loadedmetadata',loaded);
+      contextVideo.removeEventListener('error',failed);
+      if(timer) clearTimeout(timer);
+      resolve(ok&&token===V.seekToken);
+    };
+    const loaded=()=>done(true), failed=()=>done(false);
+    contextVideo.addEventListener('loadedmetadata',loaded);
+    contextVideo.addEventListener('error',failed);
+    timer=setTimeout(()=>done(false),12000);
+  });
+}
+function waitForVideoSeek(target, token){
+  return new Promise(resolve=>{
+    let timer=null, settled=false;
+    const done=ok=>{
+      if(settled) return;
+      settled=true;
+      contextVideo.removeEventListener('seeked',seeked);
+      contextVideo.removeEventListener('error',failed);
+      if(timer) clearTimeout(timer);
+      resolve(ok&&token===V.seekToken);
+    };
+    const seeked=()=>done(Math.abs(contextVideo.currentTime-target)<.15);
+    const failed=()=>done(false);
+    contextVideo.addEventListener('seeked',seeked);
+    contextVideo.addEventListener('error',failed);
+    timer=setTimeout(()=>done(false),12000);
+    try{
+      contextVideo.currentTime=target;
+      if(!contextVideo.seeking && Math.abs(contextVideo.currentTime-target)<.04){
+        requestAnimationFrame(()=>done(true));
+      }
+    }catch(_){ done(false); }
+  });
+}
+async function seekContextVideo(target, autoplay){
+  const token=++V.seekToken;
+  V.seekPending=true;
+  const loading=$('videoLoading');
+  loading.textContent=`Seeking ${videoTime(target)}...`;
+  loading.classList.remove('hidden');
+
+  // Calling play inside the original click/right-click gesture preserves Safari's
+  // media authorization while metadata and the actual seek complete asynchronously.
+  if(autoplay) contextVideo.play().catch(()=>{}); else contextVideo.pause();
+  if(!await waitForVideoMetadata(token)){
+    if(token===V.seekToken){ V.seekPending=false; contextVideo.pause(); loading.textContent='Video metadata unavailable'; toast('Could not read video metadata','err'); }
+    return false;
+  }
+  if(token!==V.seekToken) return false;
+
+  if(Number.isFinite(contextVideo.duration)) V.duration=contextVideo.duration;
+  V.clipEnd=V.duration?Math.min(V.duration,V.center+10):V.center+10;
+  if(V.clipEnd<=V.clipStart) V.clipEnd=V.clipStart+.01;
+  target=Math.min(V.clipEnd,Math.max(V.clipStart,target));
+  $('videoSeek').min=V.clipStart; $('videoSeek').max=V.clipEnd; $('videoSeek').value=target;
+
+  if(!await waitForVideoSeek(target,token)){
+    if(token===V.seekToken){ V.seekPending=false; contextVideo.pause(); loading.textContent='Video seek failed'; toast(`Could not seek video to ${videoTime(target)}`,'err'); }
+    return false;
+  }
+  if(token!==V.seekToken) return false;
+
+  V.seekPending=false;
+  loading.textContent='Loading video...';
+  loading.classList.toggle('hidden',contextVideo.readyState>=2);
+  updateVideoControls();
+  if(autoplay) contextVideo.play().catch(()=>toast('Press play to continue','err'));
+  return true;
+}
 function positionContextVideo(index, autoplay){
   V.center=videoCenterAt(index);
   V.clipStart=Math.max(0,V.center-10);
@@ -835,13 +912,8 @@ function positionContextVideo(index, autoplay){
   $('videoSeek').min=V.clipStart; $('videoSeek').max=V.clipEnd; $('videoSeek').value=V.clipStart;
   $('videoTitle').textContent=V.name||'Context video';
   $('videoSubtitle').textContent=`${S.frames[index]||'frame'} | ${videoTime(V.center)} | -10s / +10s`;
-  $('videoLoading').classList.toggle('hidden',contextVideo.readyState>=2);
-  try{ contextVideo.currentTime=Math.min(V.clipStart,Math.max(0,(contextVideo.duration||V.clipEnd)-.01)); }catch(_){}
   updateVideoControls();
-  if(autoplay){
-    const play=()=>contextVideo.play().catch(()=>{});
-    if(contextVideo.readyState>=1) play(); else contextVideo.addEventListener('loadedmetadata',play,{once:true});
-  } else contextVideo.pause();
+  seekContextVideo(V.clipStart,autoplay);
 }
 function openContextVideo(index=S.idx, autoplay=true){
   if(!V.available){ toast(V.configured?'No matching video for this case':'Set the video folder first','err'); return; }
@@ -849,15 +921,16 @@ function openContextVideo(index=S.idx, autoplay=true){
   $('videoWindow').classList.remove('hidden'); setVideoMode(V.mode);
   positionContextVideo(clampi(index,0,S.count-1),autoplay);
 }
-function toggleVideoPlay(){
+async function toggleVideoPlay(){
   if(contextVideo.paused){
-    if(contextVideo.currentTime>=V.clipEnd-.05) contextVideo.currentTime=V.clipStart;
+    if(contextVideo.currentTime>=V.clipEnd-.05){ await seekContextVideo(V.clipStart,true); return; }
     contextVideo.play().catch(()=>{});
   } else contextVideo.pause();
 }
 function stepVideo(direction){
   contextVideo.pause();
-  contextVideo.currentTime=Math.min(V.clipEnd,Math.max(V.clipStart,(contextVideo.currentTime||V.center)+direction/Math.max(.01,V.fps)));
+  const target=Math.min(V.clipEnd,Math.max(V.clipStart,(contextVideo.currentTime||V.center)+direction/Math.max(.01,V.fps)));
+  seekContextVideo(target,false);
 }
 function timelineIndex(e){
   const slider=$('frameSlider'), rect=slider.getBoundingClientRect();
@@ -1877,18 +1950,19 @@ $('videoPath').addEventListener('keydown',e=>{ if(e.key==='Enter') configureVide
 $('videoBrowse').addEventListener('click',()=>openBrowser({title:'Choose context video folder',start:$('videoPath').value||S.defaultPath,onSelect:p=>{ if(p){ $('videoPath').value=p; configureVideoFolder(); } }}));
 $('videoClose').addEventListener('click',closeContextVideo);
 $('videoPlayPause').addEventListener('click',toggleVideoPlay);
-$('videoReplay').addEventListener('click',()=>{ contextVideo.currentTime=V.clipStart; contextVideo.play().catch(()=>{}); });
+$('videoReplay').addEventListener('click',()=>seekContextVideo(V.clipStart,true));
 $('videoPrevFrame').addEventListener('click',()=>stepVideo(-1));
 $('videoNextFrame').addEventListener('click',()=>stepVideo(1));
 $('videoSeek').addEventListener('input',e=>{ contextVideo.pause(); contextVideo.currentTime=Number(e.target.value); updateVideoControls(); });
 contextVideo.addEventListener('click',toggleVideoPlay);
 contextVideo.addEventListener('loadedmetadata',()=>{
   if(Number.isFinite(contextVideo.duration)){ V.duration=contextVideo.duration; V.clipEnd=Math.min(V.duration,V.center+10); $('videoSeek').max=V.clipEnd; }
-  $('videoLoading').classList.add('hidden'); updateVideoControls();
+  if(!V.seekPending) $('videoLoading').classList.add('hidden');
+  updateVideoControls();
 });
-contextVideo.addEventListener('canplay',()=>$('videoLoading').classList.add('hidden'));
+contextVideo.addEventListener('canplay',()=>{ if(!V.seekPending) $('videoLoading').classList.add('hidden'); });
 contextVideo.addEventListener('waiting',()=>$('videoLoading').classList.remove('hidden'));
-contextVideo.addEventListener('playing',()=>{ $('videoLoading').classList.add('hidden'); updateVideoControls(); });
+contextVideo.addEventListener('playing',()=>{ if(!V.seekPending) $('videoLoading').classList.add('hidden'); updateVideoControls(); });
 contextVideo.addEventListener('pause',updateVideoControls);
 contextVideo.addEventListener('timeupdate',()=>{
   if(contextVideo.currentTime>=V.clipEnd-.02 && !contextVideo.paused){ contextVideo.pause(); contextVideo.currentTime=V.clipEnd; }

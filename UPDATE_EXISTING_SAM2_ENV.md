@@ -62,7 +62,7 @@ export SAM2_CHECKPOINT=../checkpoints/sam2.1_hiera_large.pt
 python server.py
 ~~~
 
-Open <http://127.0.0.1:9000>.
+Open <http://127.0.0.1:9010>.
 
 The old `ISSAS/` and new `ISSAS_Web/` folders can remain beside each other in
 the same SAM2 root folder.

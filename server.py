@@ -27,6 +27,7 @@ import base64
 import re
 import subprocess
 import traceback
+from email.utils import formatdate
 
 import numpy as np
 from PIL import Image, ImageFilter, ImageDraw
@@ -868,12 +869,13 @@ def _file_chunks(path, start, end, chunk_size=1024 * 1024):
             yield chunk
 
 
-@app.get("/api/video/file")
+@app.api_route("/api/video/file", methods=["GET", "HEAD"])
 def video_file(request: Request):
     path = SESSION.video_path
     if not path or not os.path.isfile(path):
         raise HTTPException(404, "No video matches the current case")
-    size = os.path.getsize(path)
+    stat = os.stat(path)
+    size = stat.st_size
     start, end, status = 0, size - 1, 200
     range_header = request.headers.get("range")
     if range_header:
@@ -895,9 +897,13 @@ def video_file(request: Request):
     media_type = {".mp4": "video/mp4", ".m4v": "video/mp4", ".mov": "video/quicktime",
                   ".webm": "video/webm"}.get(ext, "application/octet-stream")
     headers = {"Accept-Ranges": "bytes", "Content-Length": str(end - start + 1),
-               "Cache-Control": "private, max-age=3600"}
+               "Cache-Control": "private, max-age=3600",
+               "Last-Modified": formatdate(stat.st_mtime, usegmt=True),
+               "ETag": f'"{stat.st_mtime_ns:x}-{size:x}"'}
     if status == 206:
         headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+    if request.method == "HEAD":
+        return Response(status_code=status, media_type=media_type, headers=headers)
     return StreamingResponse(_file_chunks(path, start, end), status_code=status,
                              media_type=media_type, headers=headers)
 
@@ -1623,6 +1629,6 @@ app.mount("/static", StaticFiles(directory=os.path.join(SCRIPT_DIR, "static")), 
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", "9000"))
+    port = int(os.environ.get("PORT", "9010"))
     print(f"[issas] open http://127.0.0.1:{port}")
     uvicorn.run(app, host="127.0.0.1", port=port)

@@ -90,8 +90,8 @@ python server.py
 
 Open these local addresses in a current browser:
 
-- Spatial annotation: <http://127.0.0.1:9000>
-- Temporal workflow annotation: <http://127.0.0.1:9000/workflow>
+- Spatial annotation: <http://127.0.0.1:9010>
+- Temporal workflow annotation: <http://127.0.0.1:9010/workflow>
 
 Keep the terminal open while using the application. Stop the server with
 `Ctrl+C`.
@@ -140,7 +140,7 @@ Users can interactively perform annotation following the guidance shown below, w
 
 ## Notes
 
-- The server is local and single-user; do not expose port 9000 to the internet.
+- The server is local and single-user; do not expose port 9010 to the internet.
 - Model checkpoints are not stored in this repository. Keep them in the parent
   SAM2 `checkpoints/` folder.
 - Do not commit clinical videos, frames, masks, exported results, or patient data.
