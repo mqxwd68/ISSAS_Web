@@ -55,7 +55,8 @@ const S = {
 const V = {
   available: false, configured: false, fps: 25, duration: 0, name: null, caseName: null,
   clipStart: 0, clipEnd: 20, center: 0, mode: 'float', open: false,
-  sourceKey: null, seekToken: 0, seekPending: false,
+  sourceKey: null, seekToken: 0, seekPending: false, fpsSource: null, frameIndex: 0,
+  floatRect: null,
 };
 
 // ---------- canvas ----------
@@ -770,13 +771,14 @@ function videoCenterAt(index){ return frameIdAt(index)/Math.max(.01,V.fps||25); 
 function applyVideoStatus(j){
   j=j||{};
   V.configured=!!j.configured; V.available=!!j.available;
-  V.fps=Number(j.fps)||V.fps||25; V.duration=Number(j.duration)||0;
+  V.fps=Number(j.fps)||V.fps||25; V.fpsSource=j.fps_source||null; V.duration=Number(j.duration)||0;
   V.name=j.name||null; V.caseName=j.case||null;
   const badge=$('videoSourceBadge'), info=$('videoSourceInfo');
   badge.classList.toggle('ready',V.available); badge.classList.toggle('missing',V.configured&&!V.available);
   badge.textContent=V.available?'ready':(V.configured?'no match':'not set');
   if(j.directory && !$('videoPath').value) $('videoPath').value=j.directory;
-  info.textContent=V.available?`${j.name} | ${V.fps.toFixed(3)} FPS`
+  const fpsNote=V.fpsSource==='fallback'?' (fallback; set FPS manually)':(V.fpsSource==='override'?' (manual)':' (auto)');
+  info.textContent=V.available?`${j.name} | ${V.fps.toFixed(3)} FPS${fpsNote}`
     :(j.expected?`Waiting for ${j.expected}`:'Matches <case>.mp4');
   info.title=info.textContent;
   $('videoOpen').disabled=!V.available||!S.count;
@@ -800,11 +802,31 @@ async function configureVideoFolder(){
   applyVideoStatus(j);
   toast(j.available?`Matched ${j.name}`:`Folder set; ${j.expected||'case video'} was not found`,j.available?'ok':'err');
 }
+function rememberFloatRect(){
+  if(V.mode!=='float'||!V.open) return;
+  const rect=$('videoWindow').getBoundingClientRect();
+  V.floatRect={left:rect.left,top:rect.top,width:rect.width,height:rect.height};
+}
+function restoreFloatRect(){
+  const win=$('videoWindow'), saved=V.floatRect;
+  if(!saved){ win.style.removeProperty('left'); win.style.removeProperty('width'); win.style.removeProperty('height'); win.style.removeProperty('right'); return; }
+  const width=Math.min(saved.width,Math.max(280,window.innerWidth-24));
+  const height=Math.min(saved.height,Math.max(220,window.innerHeight-70));
+  const left=Math.max(0,Math.min(window.innerWidth-width,saved.left));
+  const top=Math.max(54,Math.min(window.innerHeight-height,saved.top));
+  Object.assign(win.style,{left:left+'px',top:top+'px',right:'auto',width:width+'px',height:height+'px'});
+}
+function clearDockedVideoGeometry(){
+  const win=$('videoWindow');
+  for(const prop of ['left','right','top','bottom','width','height']) win.style.removeProperty(prop);
+}
 function setVideoMode(mode){
   if(!['float','split','main'].includes(mode)) mode='float';
+  if(V.mode==='float'&&mode!=='float') rememberFloatRect();
   V.mode=mode;
   const win=$('videoWindow'), stage=win.closest('.stage');
   win.classList.remove('mode-float','mode-split','mode-main'); win.classList.add('mode-'+mode);
+  if(mode==='float') requestAnimationFrame(restoreFloatRect); else clearDockedVideoGeometry();
   stage.classList.toggle('video-split',mode==='split'&&V.open);
   stage.classList.toggle('video-main',mode==='main'&&V.open);
   syncVideoSplitDirection();
@@ -827,6 +849,12 @@ function updateVideoControls(){
   $('videoSeek').value=Math.min(V.clipEnd,Math.max(V.clipStart,t));
   $('videoTime').textContent=`${videoTime(t)} / ${videoTime(V.clipEnd)}`;
   $('videoPlayPause').textContent=contextVideo.paused?'\u25B6':'\u23F8';
+}
+function updateVideoFrameMark(){
+  const span=Math.max(.01,V.clipEnd-V.clipStart);
+  const pct=Math.max(0,Math.min(100,(V.center-V.clipStart)/span*100));
+  $('videoSeekWrap').style.setProperty('--frame-mark-pos',pct+'%');
+  $('videoFrameMark').title=`Observed frame: ${S.frames[V.frameIndex]||'frame'} at ${videoTime(V.center)}`;
 }
 function waitForVideoMetadata(token){
   if(contextVideo.readyState>=1 && Number.isFinite(contextVideo.duration)) return Promise.resolve(true);
@@ -855,14 +883,15 @@ function waitForVideoSeek(target, token){
       if(timer) clearTimeout(timer);
       resolve(ok&&token===V.seekToken);
     };
-    const seeked=()=>done(Math.abs(contextVideo.currentTime-target)<.15);
+    const tolerance=Math.max(.25,2/Math.max(1,V.fps));
+    const seeked=()=>{ if(Math.abs(contextVideo.currentTime-target)<=tolerance) done(true); };
     const failed=()=>done(false);
     contextVideo.addEventListener('seeked',seeked);
     contextVideo.addEventListener('error',failed);
-    timer=setTimeout(()=>done(false),12000);
+    timer=setTimeout(()=>done(Math.abs(contextVideo.currentTime-target)<=tolerance),12000);
     try{
       contextVideo.currentTime=target;
-      if(!contextVideo.seeking && Math.abs(contextVideo.currentTime-target)<.04){
+      if(!contextVideo.seeking && Math.abs(contextVideo.currentTime-target)<=tolerance){
         requestAnimationFrame(()=>done(true));
       }
     }catch(_){ done(false); }
@@ -889,6 +918,7 @@ async function seekContextVideo(target, autoplay){
   if(V.clipEnd<=V.clipStart) V.clipEnd=V.clipStart+.01;
   target=Math.min(V.clipEnd,Math.max(V.clipStart,target));
   $('videoSeek').min=V.clipStart; $('videoSeek').max=V.clipEnd; $('videoSeek').value=target;
+  updateVideoFrameMark();
 
   if(!await waitForVideoSeek(target,token)){
     if(token===V.seekToken){ V.seekPending=false; contextVideo.pause(); loading.textContent='Video seek failed'; toast(`Could not seek video to ${videoTime(target)}`,'err'); }
@@ -904,6 +934,7 @@ async function seekContextVideo(target, autoplay){
   return true;
 }
 function positionContextVideo(index, autoplay){
+  V.frameIndex=index;
   V.center=videoCenterAt(index);
   V.clipStart=Math.max(0,V.center-10);
   const duration=V.duration||(Number.isFinite(contextVideo.duration)?contextVideo.duration:0);
@@ -912,6 +943,7 @@ function positionContextVideo(index, autoplay){
   $('videoSeek').min=V.clipStart; $('videoSeek').max=V.clipEnd; $('videoSeek').value=V.clipStart;
   $('videoTitle').textContent=V.name||'Context video';
   $('videoSubtitle').textContent=`${S.frames[index]||'frame'} | ${videoTime(V.center)} | -10s / +10s`;
+  updateVideoFrameMark();
   updateVideoControls();
   seekContextVideo(V.clipStart,autoplay);
 }
@@ -1957,6 +1989,7 @@ $('videoSeek').addEventListener('input',e=>{ contextVideo.pause(); contextVideo.
 contextVideo.addEventListener('click',toggleVideoPlay);
 contextVideo.addEventListener('loadedmetadata',()=>{
   if(Number.isFinite(contextVideo.duration)){ V.duration=contextVideo.duration; V.clipEnd=Math.min(V.duration,V.center+10); $('videoSeek').max=V.clipEnd; }
+  updateVideoFrameMark();
   if(!V.seekPending) $('videoLoading').classList.add('hidden');
   updateVideoControls();
 });

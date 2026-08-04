@@ -584,8 +584,8 @@ input[type=range]::-moz-range-thumb{ width:14px; height:14px; border-radius:50%;
   box-shadow:0 20px 55px rgba(0,0,0,.58)}
 .video-window.mode-float{position:fixed; z-index:85; width:min(620px,48vw); height:min(450px,55vh);
   right:292px; top:82px; resize:both}
-.video-window.mode-split{position:relative; flex:0 1 46%; min-width:280px; height:auto; box-shadow:none}
-.video-window.mode-main{position:relative; flex:1; min-width:0; height:auto; box-shadow:none}
+.video-window.mode-split{position:relative; inset:auto; flex:0 1 46%; min-width:280px; width:auto; height:auto; box-shadow:none}
+.video-window.mode-main{position:relative; inset:auto; flex:1; min-width:0; width:auto; height:auto; box-shadow:none}
 .stage.video-split.video-narrow{flex-direction:column}
 .stage.video-split.video-narrow .video-window.mode-split{width:100%; min-width:0; min-height:180px; flex:0 1 46%}
 .video-titlebar{height:43px; flex:none; display:flex; align-items:center; gap:10px; padding:0 8px 0 12px;
@@ -608,7 +608,13 @@ input[type=range]::-moz-range-thumb{ width:14px; height:14px; border-radius:50%;
   color:var(--muted); background:rgba(5,6,7,.6); font-size:12px; pointer-events:none}
 .video-controls{height:48px; flex:none; display:flex; align-items:center; gap:7px; padding:7px 10px;
   border-top:1px solid var(--line); background:#11161a}
-.video-controls #videoSeek{flex:1; min-width:70px}
+.video-seek-wrap{position:relative; display:flex; align-items:center; flex:1; min-width:70px}
+.video-controls #videoSeek{width:100%; min-width:0}
+.video-frame-mark{position:absolute; z-index:2; left:var(--frame-mark-pos,50%); top:50%; width:2px; height:16px;
+  transform:translate(-1px,-50%); border-radius:1px; background:#ffd166; box-shadow:0 0 0 1px rgba(8,11,13,.65);
+  pointer-events:none}
+.video-frame-mark::before{content:""; position:absolute; left:50%; top:-4px; transform:translateX(-50%);
+  border-left:4px solid transparent; border-right:4px solid transparent; border-top:5px solid #ffd166}
 .video-controls #videoTime{width:92px; flex:none; color:var(--muted); font-size:9.5px; text-align:right}
 .video-timeline-tip{position:fixed; z-index:95; transform:translate(-50%,-100%); pointer-events:none;
   padding:7px 9px; border:1px solid var(--accent-dim); border-radius:6px; background:#11171b;

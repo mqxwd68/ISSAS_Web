@@ -8,7 +8,7 @@ A web re-implementation of the ISSAS smart-annotation tool. SAM2 stays in Python
 Run:
     conda activate sam2
     pip install fastapi "uvicorn[standard]" python-multipart pillow numpy scipy
-    python server.py            # then open http://127.0.0.1:8000
+    python server.py            # then open http://127.0.0.1:9010
 
 If SAM2 / torch is unavailable, the server runs in SIMULATION mode so the whole UI
 (zoom, prompting, brush, save, etc.) still works for development — predicted masks are
@@ -25,6 +25,7 @@ import sys
 import json
 import base64
 import re
+import struct
 import subprocess
 import traceback
 from email.utils import formatdate
@@ -180,13 +181,119 @@ def _find_case_video() -> Optional[str]:
     return None
 
 
+def _iter_mp4_boxes(source, start: int, end: int):
+    """Yield (type, payload_start, box_end) without loading large MP4 boxes."""
+    pos = start
+    while pos + 8 <= end:
+        source.seek(pos)
+        header = source.read(8)
+        if len(header) != 8:
+            return
+        size, box_type = struct.unpack(">I4s", header)
+        header_size = 8
+        if size == 1:
+            extended = source.read(8)
+            if len(extended) != 8:
+                return
+            size = struct.unpack(">Q", extended)[0]
+            header_size = 16
+        elif size == 0:
+            size = end - pos
+        if size < header_size or pos + size > end:
+            return
+        yield box_type, pos + header_size, pos + size
+        pos += size
+
+
+def _mp4_child(source, start: int, end: int, wanted: bytes):
+    return next((box for box in _iter_mp4_boxes(source, start, end) if box[0] == wanted), None)
+
+
+def _probe_mp4(path: str):
+    """Read FPS directly from an MP4/MOV video track when ffprobe is unavailable."""
+    if os.path.splitext(path)[1].lower() not in {".mp4", ".m4v", ".mov"}:
+        return None
+    try:
+        with open(path, "rb") as source:
+            file_size = os.fstat(source.fileno()).st_size
+            moov = _mp4_child(source, 0, file_size, b"moov")
+            if not moov:
+                return None
+            for box_type, trak_start, trak_end in _iter_mp4_boxes(source, moov[1], moov[2]):
+                if box_type != b"trak":
+                    continue
+                mdia = _mp4_child(source, trak_start, trak_end, b"mdia")
+                if not mdia:
+                    continue
+                hdlr = _mp4_child(source, mdia[1], mdia[2], b"hdlr")
+                if not hdlr:
+                    continue
+                source.seek(hdlr[1])
+                if len(source.read(12)) < 12:
+                    continue
+                source.seek(hdlr[1] + 8)
+                if source.read(4) != b"vide":
+                    continue
+
+                mdhd = _mp4_child(source, mdia[1], mdia[2], b"mdhd")
+                if not mdhd:
+                    continue
+                source.seek(mdhd[1])
+                header = source.read(min(32, mdhd[2] - mdhd[1]))
+                if len(header) < 20:
+                    continue
+                if header[0] == 1:
+                    if len(header) < 32:
+                        continue
+                    timescale = struct.unpack_from(">I", header, 20)[0]
+                    media_duration = struct.unpack_from(">Q", header, 24)[0]
+                else:
+                    timescale = struct.unpack_from(">I", header, 12)[0]
+                    media_duration = struct.unpack_from(">I", header, 16)[0]
+                if not timescale:
+                    continue
+
+                sample_count = total_ticks = 0
+                minf = _mp4_child(source, mdia[1], mdia[2], b"minf")
+                stbl = _mp4_child(source, minf[1], minf[2], b"stbl") if minf else None
+                stts = _mp4_child(source, stbl[1], stbl[2], b"stts") if stbl else None
+                if stts:
+                    source.seek(stts[1])
+                    stts_header = source.read(8)
+                    if len(stts_header) == 8:
+                        entry_count = min(struct.unpack_from(">I", stts_header, 4)[0], 1_000_000)
+                        for _ in range(entry_count):
+                            entry = source.read(8)
+                            if len(entry) != 8:
+                                break
+                            count, delta = struct.unpack(">II", entry)
+                            sample_count += count
+                            total_ticks += count * delta
+                if not sample_count and stbl:
+                    stsz = _mp4_child(source, stbl[1], stbl[2], b"stsz")
+                    if stsz:
+                        source.seek(stsz[1] + 8)
+                        raw_count = source.read(4)
+                        if len(raw_count) == 4:
+                            sample_count = struct.unpack(">I", raw_count)[0]
+                            total_ticks = media_duration
+
+                fps = sample_count * timescale / total_ticks if total_ticks else 0
+                duration = media_duration / timescale if media_duration not in {0, 0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF} else None
+                if fps > 0:
+                    return {"fps": fps, "duration": duration}
+    except (OSError, struct.error, ValueError):
+        return None
+    return None
+
+
 def _probe_video(path: str):
     cached = SESSION.video_probe
     stamp = (path, os.path.getmtime(path), SESSION.video_fps_override)
     if cached and cached.get("_stamp") == stamp:
         return cached
-    info = {"fps": SESSION.video_fps_override or 25.0, "duration": None,
-            "width": None, "height": None, "_stamp": stamp}
+    info = {"fps": SESSION.video_fps_override, "fps_source": "override" if SESSION.video_fps_override else None,
+            "duration": None, "width": None, "height": None, "_stamp": stamp}
     try:
         result = subprocess.run([
             "ffprobe", "-v", "error", "-select_streams", "v:0",
@@ -199,11 +306,26 @@ def _probe_video(path: str):
         detected = float(rate[0]) / float(rate[1]) if len(rate) == 2 and float(rate[1]) else 0
         if not SESSION.video_fps_override and detected > 0:
             info["fps"] = detected
+            info["fps_source"] = "ffprobe"
         info["duration"] = float((data.get("format") or {}).get("duration") or 0) or None
         info["width"] = stream.get("width")
         info["height"] = stream.get("height")
     except (FileNotFoundError, subprocess.SubprocessError, ValueError, json.JSONDecodeError):
         pass
+    # Cross-check MP4 timing even when ffprobe exists. Some macOS setups expose
+    # a stale/nominal average rate (for example 25 FPS) while the sample table
+    # reports the actual 30 FPS timeline used by the extracted frame IDs.
+    mp4_info = _probe_mp4(path)
+    if mp4_info:
+        detected = float(info["fps"] or 0)
+        if not detected or (not SESSION.video_fps_override and abs(detected - mp4_info["fps"]) / mp4_info["fps"] > 0.01):
+            info["fps"] = mp4_info["fps"]
+            info["fps_source"] = "mp4"
+        if not info["duration"]:
+            info["duration"] = mp4_info["duration"]
+    if not info["fps"]:
+        info["fps"] = 25.0
+        info["fps_source"] = "fallback"
     SESSION.video_probe = info
     return info
 
@@ -219,6 +341,7 @@ def _video_status():
     return {"configured": True, "available": True,
             "directory": SESSION.video_dir_display or SESSION.video_dir,
             "case": case, "name": os.path.basename(path), "fps": probe["fps"],
+            "fps_source": probe["fps_source"],
             "duration": probe["duration"], "width": probe["width"], "height": probe["height"]}
 
 

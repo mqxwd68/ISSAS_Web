@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ISSAS — Interactive Annotation</title>
-  <link rel="stylesheet" href="/static/style.css?v=20260804d" />
+  <link rel="stylesheet" href="/static/style.css?v=20260804e" />
 </head>
 <body>
   <!-- ===== Top bar ===== -->
@@ -156,7 +156,10 @@
           <button id="videoReplay" class="video-icon-btn" title="Replay context" aria-label="Replay context">&#8635;</button>
           <button id="videoPlayPause" class="video-play" title="Play or pause" aria-label="Play or pause">&#9654;</button>
           <button id="videoNextFrame" class="video-icon-btn" title="Next video frame" aria-label="Next video frame">&#9197;</button>
-          <input id="videoSeek" type="range" min="0" max="20" step="0.01" value="0" aria-label="Context playback position" />
+          <div id="videoSeekWrap" class="video-seek-wrap">
+            <input id="videoSeek" type="range" min="0" max="20" step="0.01" value="0" aria-label="Context playback position" />
+            <span id="videoFrameMark" class="video-frame-mark" title="Observed frame position" aria-hidden="true"></span>
+          </div>
           <span id="videoTime" class="mono">00:00 / 00:20</span>
         </div>
       </div>
@@ -486,6 +489,6 @@
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="/static/app.js?v=20260804d"></script>
+  <script src="/static/app.js?v=20260804e"></script>
 </body>
 </html>
