@@ -24,14 +24,15 @@ import io
 import sys
 import json
 import base64
+import re
 import subprocess
 import traceback
 
 import numpy as np
 from PIL import Image, ImageFilter, ImageDraw
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, Response, JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, Response, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
@@ -45,11 +46,15 @@ DEFAULT_BROWSE_PATH = os.environ.get(
     "/home/mqxwd68/Downloads/sam2/ISSAS/Test_data/Gastro28/S01/images",
 )
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".tiff")
+VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".webm")
 
 
 def _norm(p):
-    """Normalize a filesystem path: accept Windows-style backslashes and expand ~."""
+    """Normalize native/Windows paths for the WSL-hosted local server."""
     p = (p or "").replace("\\", "/").strip()
+    drive = re.match(r"^([A-Za-z]):/(.*)$", p)
+    if drive and os.name != "nt":
+        p = f"/mnt/{drive.group(1).lower()}/{drive.group(2)}"
     return os.path.expanduser(p)
 
 # --------------------------------------------------------------------------- #
@@ -128,6 +133,11 @@ class Session:
     def __init__(self):
         self.frame_dir: Optional[str] = None
         self.frame_names: List[str] = []
+        self.video_dir: Optional[str] = None
+        self.video_dir_display: Optional[str] = None
+        self.video_path: Optional[str] = None
+        self.video_fps_override: Optional[float] = None
+        self.video_probe = None
         self.inference_state = None
         # propagation
         self.frame_generator = None
@@ -143,6 +153,72 @@ class Session:
 
 
 SESSION = Session()
+
+
+def _case_name(frame_dir: Optional[str]) -> Optional[str]:
+    if not frame_dir:
+        return None
+    path = os.path.normpath(frame_dir)
+    name = os.path.basename(path)
+    if name.lower() in {"images", "image", "imgs", "frames", "frame", "jpeg", "jpg", "png"}:
+        name = os.path.basename(os.path.dirname(path))
+    return name or None
+
+
+def _find_case_video() -> Optional[str]:
+    SESSION.video_path = None
+    case = _case_name(SESSION.frame_dir)
+    if not case or not SESSION.video_dir or not os.path.isdir(SESSION.video_dir):
+        return None
+    wanted = case.casefold()
+    for entry in os.scandir(SESSION.video_dir):
+        stem, ext = os.path.splitext(entry.name)
+        if entry.is_file() and ext.lower() in VIDEO_EXTS and stem.casefold() == wanted:
+            SESSION.video_path = entry.path
+            return entry.path
+    return None
+
+
+def _probe_video(path: str):
+    cached = SESSION.video_probe
+    stamp = (path, os.path.getmtime(path), SESSION.video_fps_override)
+    if cached and cached.get("_stamp") == stamp:
+        return cached
+    info = {"fps": SESSION.video_fps_override or 25.0, "duration": None,
+            "width": None, "height": None, "_stamp": stamp}
+    try:
+        result = subprocess.run([
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=avg_frame_rate,width,height:format=duration",
+            "-of", "json", path,
+        ], capture_output=True, text=True, timeout=4, check=True)
+        data = json.loads(result.stdout or "{}")
+        stream = (data.get("streams") or [{}])[0]
+        rate = str(stream.get("avg_frame_rate") or "0/1").split("/")
+        detected = float(rate[0]) / float(rate[1]) if len(rate) == 2 and float(rate[1]) else 0
+        if not SESSION.video_fps_override and detected > 0:
+            info["fps"] = detected
+        info["duration"] = float((data.get("format") or {}).get("duration") or 0) or None
+        info["width"] = stream.get("width")
+        info["height"] = stream.get("height")
+    except (FileNotFoundError, subprocess.SubprocessError, ValueError, json.JSONDecodeError):
+        pass
+    SESSION.video_probe = info
+    return info
+
+
+def _video_status():
+    path = SESSION.video_path if SESSION.video_path and os.path.isfile(SESSION.video_path) else _find_case_video()
+    case = _case_name(SESSION.frame_dir)
+    if not path:
+        return {"configured": bool(SESSION.video_dir), "available": False,
+                "directory": SESSION.video_dir_display or SESSION.video_dir, "case": case,
+                "expected": f"{case}.mp4" if case else None}
+    probe = _probe_video(path)
+    return {"configured": True, "available": True,
+            "directory": SESSION.video_dir_display or SESSION.video_dir,
+            "case": case, "name": os.path.basename(path), "fps": probe["fps"],
+            "duration": probe["duration"], "width": probe["width"], "height": probe["height"]}
 
 
 # --------------------------------------------------------------------------- #
@@ -428,6 +504,11 @@ app = FastAPI(title="ISSAS Web")
 
 class OpenFolderReq(BaseModel):
     path: str
+
+
+class VideoFolderReq(BaseModel):
+    path: str
+    fps: Optional[float] = None
 
 
 class PredictReq(BaseModel):
@@ -739,6 +820,8 @@ def open_folder(req: OpenFolderReq):
     SESSION.sizes = {}
     SESSION.inference_state = None
     SESSION.reset_propagation()
+    SESSION.video_probe = None
+    _find_case_video()
 
     w, h = frame_size(0)
     return {
@@ -748,7 +831,75 @@ def open_folder(req: OpenFolderReq):
         "height": h,
         "sam2_available": SAM2_AVAILABLE,
         "device": str(device) if device is not None else "cpu",
+        "case": _case_name(path),
+        "video": _video_status(),
     }
+
+
+@app.post("/api/video/config")
+def video_config(req: VideoFolderReq):
+    path = _norm(req.path)
+    if not os.path.isdir(path):
+        raise HTTPException(400, f"Video directory not found: {path}")
+    if req.fps is not None and (req.fps <= 0 or req.fps > 240):
+        raise HTTPException(400, "FPS must be between 0 and 240")
+    SESSION.video_dir = os.path.abspath(path)
+    SESSION.video_dir_display = req.path.strip()
+    SESSION.video_fps_override = req.fps
+    SESSION.video_probe = None
+    _find_case_video()
+    return _video_status()
+
+
+@app.get("/api/video/status")
+def video_status():
+    return _video_status()
+
+
+def _file_chunks(path, start, end, chunk_size=1024 * 1024):
+    with open(path, "rb") as source:
+        source.seek(start)
+        remaining = end - start + 1
+        while remaining > 0:
+            chunk = source.read(min(chunk_size, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            yield chunk
+
+
+@app.get("/api/video/file")
+def video_file(request: Request):
+    path = SESSION.video_path
+    if not path or not os.path.isfile(path):
+        raise HTTPException(404, "No video matches the current case")
+    size = os.path.getsize(path)
+    start, end, status = 0, size - 1, 200
+    range_header = request.headers.get("range")
+    if range_header:
+        match = re.match(r"bytes=(\d*)-(\d*)", range_header)
+        if not match:
+            return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
+        left, right = match.groups()
+        if not left:
+            suffix = int(right or 0)
+            start = max(0, size - suffix)
+        else:
+            start = int(left)
+        if right and left:
+            end = min(int(right), size - 1)
+        if start >= size or start > end:
+            return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
+        status = 206
+    ext = os.path.splitext(path)[1].lower()
+    media_type = {".mp4": "video/mp4", ".m4v": "video/mp4", ".mov": "video/quicktime",
+                  ".webm": "video/webm"}.get(ext, "application/octet-stream")
+    headers = {"Accept-Ranges": "bytes", "Content-Length": str(end - start + 1),
+               "Cache-Control": "private, max-age=3600"}
+    if status == 206:
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+    return StreamingResponse(_file_chunks(path, start, end), status_code=status,
+                             media_type=media_type, headers=headers)
 
 
 @app.post("/api/init")

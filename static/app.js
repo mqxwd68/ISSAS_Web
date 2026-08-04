@@ -52,6 +52,12 @@ const S = {
   img: null,               // HTMLImageElement of current frame
 };
 
+const V = {
+  available: false, configured: false, fps: 25, duration: 0, name: null, caseName: null,
+  clipStart: 0, clipEnd: 20, center: 0, mode: 'float', open: false,
+  sourceKey: null,
+};
+
 // ---------- canvas ----------
 const canvas = $('canvas');
 const ctx = canvas.getContext('2d');
@@ -655,6 +661,7 @@ async function loadFrame(newIdx, opts={}){
   $('frameName').textContent=meta.name;
   $('position').textContent=`${S.idx+1} / ${S.count}`;
   $('frameSlider').value=S.idx;
+  if(V.open) positionContextVideo(S.idx,false);
 
   const forward = newIdx > oldIdx;
   const firstVisit = !S.frameMasks.has(newIdx);
@@ -746,6 +753,126 @@ function flashScreen(){
   f.classList.remove('run'); void f.offsetWidth; f.classList.add('run');
 }
 
+// ---------- context video ----------
+const contextVideo=$('contextVideo');
+function videoTime(seconds){
+  seconds=Math.max(0, Number(seconds)||0);
+  const whole=Math.floor(seconds), h=Math.floor(whole/3600), m=Math.floor((whole%3600)/60), s=whole%60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+function frameIdAt(index){
+  const name=S.frames[index]||'';
+  const stem=name.replace(/\.[^.]+$/,'');
+  const parts=stem.match(/\d+/g);
+  return parts&&parts.length? parseInt(parts[parts.length-1],10) : index;
+}
+function videoCenterAt(index){ return frameIdAt(index)/Math.max(.01,V.fps||25); }
+function applyVideoStatus(j){
+  j=j||{};
+  V.configured=!!j.configured; V.available=!!j.available;
+  V.fps=Number(j.fps)||V.fps||25; V.duration=Number(j.duration)||0;
+  V.name=j.name||null; V.caseName=j.case||null;
+  const badge=$('videoSourceBadge'), info=$('videoSourceInfo');
+  badge.classList.toggle('ready',V.available); badge.classList.toggle('missing',V.configured&&!V.available);
+  badge.textContent=V.available?'ready':(V.configured?'no match':'not set');
+  if(j.directory && !$('videoPath').value) $('videoPath').value=j.directory;
+  info.textContent=V.available?`${j.name} | ${V.fps.toFixed(3)} FPS`
+    :(j.expected?`Waiting for ${j.expected}`:'Matches <case>.mp4');
+  info.title=info.textContent;
+  $('videoOpen').disabled=!V.available||!S.count;
+  if(!V.available){ closeContextVideo(); contextVideo.removeAttribute('src'); V.sourceKey=null; return; }
+  const key=`${j.directory||''}|${j.name||''}`;
+  if(V.sourceKey!==key){
+    V.sourceKey=key;
+    contextVideo.src='/api/video/file?key='+encodeURIComponent(key);
+    contextVideo.load();
+  }
+}
+async function configureVideoFolder(){
+  const path=$('videoPath').value.trim();
+  if(!path){ toast('Enter a video folder path','err'); return; }
+  const rawFps=$('videoFps').value.trim(), fps=rawFps?Number(rawFps):null;
+  if(rawFps && (!Number.isFinite(fps)||fps<=0)){ toast('FPS must be greater than zero','err'); return; }
+  const {ok,j}=await API.post('/api/video/config',{path,fps});
+  if(!ok){ toast(j.detail||'video folder could not be opened','err'); return; }
+  try{ localStorage.setItem('issas.videoPath',path); localStorage.setItem('issas.videoFps',rawFps); }catch(_){}
+  applyVideoStatus(j);
+  toast(j.available?`Matched ${j.name}`:`Folder set; ${j.expected||'case video'} was not found`,j.available?'ok':'err');
+}
+function setVideoMode(mode){
+  if(!['float','split','main'].includes(mode)) mode='float';
+  V.mode=mode;
+  const win=$('videoWindow'), stage=win.closest('.stage');
+  win.classList.remove('mode-float','mode-split','mode-main'); win.classList.add('mode-'+mode);
+  stage.classList.toggle('video-split',mode==='split'&&V.open);
+  stage.classList.toggle('video-main',mode==='main'&&V.open);
+  syncVideoSplitDirection();
+  document.querySelectorAll('.video-mode').forEach(b=>b.classList.toggle('on',b.dataset.videoMode===mode));
+  requestAnimationFrame(resizeCanvas); setTimeout(resizeCanvas,80);
+}
+function syncVideoSplitDirection(){
+  const stage=$('videoWindow').closest('.stage');
+  stage.classList.toggle('video-narrow',V.open&&V.mode==='split'&&stage.clientWidth<720);
+}
+function closeContextVideo(){
+  V.open=false; contextVideo.pause();
+  const win=$('videoWindow'); win.classList.add('hidden');
+  const stage=win.closest('.stage'); stage.classList.remove('video-split','video-main','video-narrow');
+  requestAnimationFrame(resizeCanvas);
+}
+function updateVideoControls(){
+  const t=Number(contextVideo.currentTime)||V.clipStart;
+  $('videoSeek').value=Math.min(V.clipEnd,Math.max(V.clipStart,t));
+  $('videoTime').textContent=`${videoTime(t)} / ${videoTime(V.clipEnd)}`;
+  $('videoPlayPause').textContent=contextVideo.paused?'\u25B6':'\u23F8';
+}
+function positionContextVideo(index, autoplay){
+  V.center=videoCenterAt(index);
+  V.clipStart=Math.max(0,V.center-10);
+  const duration=V.duration||(Number.isFinite(contextVideo.duration)?contextVideo.duration:0);
+  V.clipEnd=duration?Math.min(duration,V.center+10):V.center+10;
+  if(V.clipEnd<=V.clipStart) V.clipEnd=V.clipStart+.01;
+  $('videoSeek').min=V.clipStart; $('videoSeek').max=V.clipEnd; $('videoSeek').value=V.clipStart;
+  $('videoTitle').textContent=V.name||'Context video';
+  $('videoSubtitle').textContent=`${S.frames[index]||'frame'} | ${videoTime(V.center)} | -10s / +10s`;
+  $('videoLoading').classList.toggle('hidden',contextVideo.readyState>=2);
+  try{ contextVideo.currentTime=Math.min(V.clipStart,Math.max(0,(contextVideo.duration||V.clipEnd)-.01)); }catch(_){}
+  updateVideoControls();
+  if(autoplay){
+    const play=()=>contextVideo.play().catch(()=>{});
+    if(contextVideo.readyState>=1) play(); else contextVideo.addEventListener('loadedmetadata',play,{once:true});
+  } else contextVideo.pause();
+}
+function openContextVideo(index=S.idx, autoplay=true){
+  if(!V.available){ toast(V.configured?'No matching video for this case':'Set the video folder first','err'); return; }
+  V.open=true;
+  $('videoWindow').classList.remove('hidden'); setVideoMode(V.mode);
+  positionContextVideo(clampi(index,0,S.count-1),autoplay);
+}
+function toggleVideoPlay(){
+  if(contextVideo.paused){
+    if(contextVideo.currentTime>=V.clipEnd-.05) contextVideo.currentTime=V.clipStart;
+    contextVideo.play().catch(()=>{});
+  } else contextVideo.pause();
+}
+function stepVideo(direction){
+  contextVideo.pause();
+  contextVideo.currentTime=Math.min(V.clipEnd,Math.max(V.clipStart,(contextVideo.currentTime||V.center)+direction/Math.max(.01,V.fps)));
+}
+function timelineIndex(e){
+  const slider=$('frameSlider'), rect=slider.getBoundingClientRect();
+  const ratio=Math.max(0,Math.min(1,(e.clientX-rect.left)/Math.max(1,rect.width)));
+  return Math.round(ratio*Math.max(0,S.count-1));
+}
+function showVideoTimelineTip(e){
+  if(!V.available||!S.count) return;
+  const idx=timelineIndex(e), center=videoCenterAt(idx), start=Math.max(0,center-10);
+  const end=V.duration?Math.min(V.duration,center+10):center+10;
+  const tip=$('videoTimelineTip');
+  tip.innerHTML=`Frame ${frameIdAt(idx)} &nbsp; <strong>${videoTime(center)}</strong><br>${videoTime(start)} - ${videoTime(end)}`;
+  tip.style.left=e.clientX+'px'; tip.style.top=(e.clientY-10)+'px'; tip.classList.remove('hidden');
+}
+
 // ============================ EVENTS ============================
 let lastMouse=null;
 
@@ -762,6 +889,7 @@ async function loadFolderIntoEditor(path){
   const {ok,j}=await API.post('/api/open_folder',{path});
   if(!ok){ hideOverlay(); toast(j.detail||'open failed','err'); return false; }
   S.count=j.count; S.frames=j.names; S.sam2=j.sam2_available; S.device=j.device;
+  applyVideoStatus(j.video);
   $('modeBadge').textContent = S.sam2? `SAM · ${S.device}` : 'simulation';
   $('modeBadge').className = 'badge '+(S.sam2?'badge-live':'badge-sim');
   $('frameSlider').max=S.count-1;
@@ -1738,6 +1866,74 @@ $('prevBtn').addEventListener('click',()=>requestFrame(S.idx-1));
 $('nextBtn').addEventListener('click',()=>requestFrame(S.idx+1));
 $('frameSlider').addEventListener('change',e=>requestFrame(+e.target.value));
 $('frameSlider').addEventListener('input',e=>{ $('position').textContent=`${(+e.target.value)+1} / ${S.count}`; });
+$('frameSlider').addEventListener('pointermove',showVideoTimelineTip);
+$('frameSlider').addEventListener('pointerleave',()=>$('videoTimelineTip').classList.add('hidden'));
+$('frameSlider').addEventListener('contextmenu',e=>{
+  e.preventDefault(); $('videoTimelineTip').classList.add('hidden'); openContextVideo(timelineIndex(e),true);
+});
+$('videoOpen').addEventListener('click',()=>openContextVideo(S.idx,true));
+$('videoSet').addEventListener('click',configureVideoFolder);
+$('videoPath').addEventListener('keydown',e=>{ if(e.key==='Enter') configureVideoFolder(); });
+$('videoBrowse').addEventListener('click',()=>openBrowser({title:'Choose context video folder',start:$('videoPath').value||S.defaultPath,onSelect:p=>{ if(p){ $('videoPath').value=p; configureVideoFolder(); } }}));
+$('videoClose').addEventListener('click',closeContextVideo);
+$('videoPlayPause').addEventListener('click',toggleVideoPlay);
+$('videoReplay').addEventListener('click',()=>{ contextVideo.currentTime=V.clipStart; contextVideo.play().catch(()=>{}); });
+$('videoPrevFrame').addEventListener('click',()=>stepVideo(-1));
+$('videoNextFrame').addEventListener('click',()=>stepVideo(1));
+$('videoSeek').addEventListener('input',e=>{ contextVideo.pause(); contextVideo.currentTime=Number(e.target.value); updateVideoControls(); });
+contextVideo.addEventListener('click',toggleVideoPlay);
+contextVideo.addEventListener('loadedmetadata',()=>{
+  if(Number.isFinite(contextVideo.duration)){ V.duration=contextVideo.duration; V.clipEnd=Math.min(V.duration,V.center+10); $('videoSeek').max=V.clipEnd; }
+  $('videoLoading').classList.add('hidden'); updateVideoControls();
+});
+contextVideo.addEventListener('canplay',()=>$('videoLoading').classList.add('hidden'));
+contextVideo.addEventListener('waiting',()=>$('videoLoading').classList.remove('hidden'));
+contextVideo.addEventListener('playing',()=>{ $('videoLoading').classList.add('hidden'); updateVideoControls(); });
+contextVideo.addEventListener('pause',updateVideoControls);
+contextVideo.addEventListener('timeupdate',()=>{
+  if(contextVideo.currentTime>=V.clipEnd-.02 && !contextVideo.paused){ contextVideo.pause(); contextVideo.currentTime=V.clipEnd; }
+  updateVideoControls();
+});
+contextVideo.addEventListener('error',()=>{ $('videoLoading').classList.add('hidden'); toast('The context video could not be decoded','err'); });
+document.querySelectorAll('.video-mode').forEach(btn=>btn.addEventListener('click',()=>setVideoMode(btn.dataset.videoMode)));
+if(window.ResizeObserver) new ResizeObserver(syncVideoSplitDirection).observe($('videoWindow').closest('.stage'));
+
+// The title bar moves only the floating player. Resize is provided by the window's lower-right edge.
+$('videoDragHandle').addEventListener('pointerdown',e=>{
+  if(e.button!==0||V.mode!=='float'||e.target.closest('button')) return;
+  e.preventDefault();
+  const handle=e.currentTarget, pointerId=e.pointerId;
+  const win=$('videoWindow'), rect=win.getBoundingClientRect(), dx=e.clientX-rect.left, dy=e.clientY-rect.top;
+  let finished=false;
+  const finish=()=>{
+    if(finished) return;
+    finished=true;
+    handle.classList.remove('dragging');
+    handle.removeEventListener('pointermove',move);
+    handle.removeEventListener('pointerup',finish);
+    handle.removeEventListener('pointercancel',finish);
+    handle.removeEventListener('lostpointercapture',finish);
+    window.removeEventListener('pointerup',finish,true);
+    window.removeEventListener('blur',finish);
+    if(handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+  };
+  const move=ev=>{
+    if(ev.pointerId!==pointerId) return;
+    // Recover even if pointerup happened outside the browser and was never delivered.
+    if((ev.buttons&1)===0){ finish(); return; }
+    const x=Math.max(0,Math.min(window.innerWidth-win.offsetWidth,ev.clientX-dx));
+    const y=Math.max(54,Math.min(window.innerHeight-win.offsetHeight,ev.clientY-dy));
+    win.style.left=x+'px'; win.style.top=y+'px'; win.style.right='auto';
+  };
+  handle.classList.add('dragging');
+  handle.setPointerCapture(pointerId);
+  handle.addEventListener('pointermove',move);
+  handle.addEventListener('pointerup',finish);
+  handle.addEventListener('pointercancel',finish);
+  handle.addEventListener('lostpointercapture',finish);
+  window.addEventListener('pointerup',finish,true);
+  window.addEventListener('blur',finish);
+});
 $('jumpBtn').addEventListener('click',jump);
 $('jumpInput').addEventListener('keydown',e=>{ if(e.key==='Enter') jump(); });
 function jump(){
@@ -2056,4 +2252,13 @@ async function loadImagesHere(path){
   }catch(_){}
   try{ const u=await API.get('/api/user'); S.user=u.user||'ISSAS_USER'; $('userField').value=S.user; }catch(_){ $('userField').value=S.user; }
   try{ const r=await API.get('/api/tree_root'); if(!$('fdRoot').value) $('fdRoot').value=r.root; }catch(_){}
+  try{
+    const savedPath=localStorage.getItem('issas.videoPath')||'';
+    const savedFps=localStorage.getItem('issas.videoFps')||'';
+    if(savedPath){
+      $('videoPath').value=savedPath; $('videoFps').value=savedFps;
+      const {ok,j}=await API.post('/api/video/config',{path:savedPath,fps:savedFps?Number(savedFps):null});
+      if(ok) applyVideoStatus(j); else applyVideoStatus(await API.get('/api/video/status'));
+    } else applyVideoStatus(await API.get('/api/video/status'));
+  }catch(_){}
 })();

@@ -113,6 +113,20 @@ selected. The annotation draft remains in that browser's local storage.
 3. Add positive/negative points or draw a bounding box.
 4. Refine or propagate the mask through the frame sequence.
 5. Save the masks and YOLO annotations to a local output folder.
+
+### Context video while annotating
+
+Open the **Files** drawer and set **Context video** to the folder containing the
+source videos. Windows drive paths such as
+`E:\Dataset\Gastrectomy_videos\002_S8a_videos_480p` are accepted when the server
+runs in WSL. A frame folder for case `S01` is matched to `S01.mp4`.
+
+ISSAS reads the video FPS automatically with `ffprobe`; enter an FPS value only
+when it must be overridden. Hover over the frame progress bar to see the source
+video timestamp, right-click a point on the bar to play its context, or use the
+play button for the current frame. Playback is limited to 10 seconds before and
+after that frame and can be shown as a floating, split, or main view.
+
 Users can interactively perform annotation following the guidance shown below, which includes three modes of operation: fully automatic, semi-automatic, and manual.
 <img src="imgs/img6.png" alt="" align="up"/>
 

@@ -206,6 +206,8 @@ body.resizing .viewport{pointer-events:none}
 
 /* ---------- Stage / canvas ---------- */
 .stage{min-width:0; min-height:0; display:flex}
+.stage.video-split{gap:10px}
+.stage.video-main .viewport{display:none}
 .viewport{
   position:relative; flex:1; border-radius:var(--radius); overflow:hidden;
   background:
@@ -384,6 +386,22 @@ input[type=range]::-moz-range-thumb{ width:14px; height:14px; border-radius:50%;
 .fd-rootrow .path-input.small{flex:1; margin-bottom:0}
 .fd-rootrow .btn.small{flex:none; padding:6px 8px}
 .fd-tree{flex:1; overflow:auto; padding:6px 4px; font-size:12.5px}
+.video-source{flex:none; padding:12px; border-top:1px solid var(--line); background:#11161a}
+.video-source-head{display:flex; align-items:center; justify-content:space-between; gap:8px;
+  margin-bottom:9px; color:var(--text); font-size:11px; font-weight:700; letter-spacing:.08em;
+  text-transform:uppercase}
+.video-source-badge{max-width:108px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  color:var(--muted); font-family:var(--mono); font-size:9px; font-weight:600; letter-spacing:0;
+  text-transform:none; border:1px solid var(--line); border-radius:5px; padding:2px 6px}
+.video-source-badge.ready{color:var(--accent); border-color:var(--accent-dim); background:rgba(55,229,160,.08)}
+.video-source-badge.missing{color:var(--amber); border-color:#6c5228}
+.video-path-row{display:flex; align-items:stretch; gap:6px}
+.video-path-row .path-input.small{flex:1; min-width:0; margin:0}
+.video-path-row .btn.small{flex:none; padding:6px 8px}
+.video-source-meta{display:flex; align-items:center; gap:7px; min-width:0; margin-top:8px;
+  color:var(--muted-2); font-size:10px}
+.video-source-meta .path-input.tiny{width:67px; padding:4px 6px}
+.video-source-meta .mono{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .fd-hint{padding:8px 12px; font-size:10px; border-top:1px solid var(--line-soft); line-height:1.4}
 .tree-row{display:flex; align-items:center; gap:5px; padding:3px 6px; border-radius:6px; cursor:pointer; white-space:nowrap; user-select:none}
 .tree-row:hover{background:var(--panel-2)}
@@ -553,6 +571,51 @@ input[type=range]::-moz-range-thumb{ width:14px; height:14px; border-radius:50%;
 .compare-foot{display:flex; align-items:center; gap:10px; padding:10px 16px; border-top:1px solid var(--line-soft)}
 .compare-foot .frame-slider{flex:1; max-width:none}
 
+/* context video player */
+.video-open-btn,.video-icon-btn,.video-play{
+  display:flex; align-items:center; justify-content:center; flex:none; cursor:pointer;
+  color:var(--text); background:var(--panel-2); border:1px solid var(--line); font-family:var(--sans)
+}
+.video-open-btn{width:30px; height:28px; border-radius:7px; color:var(--accent); font-size:12px}
+.video-open-btn:hover:not(:disabled),.video-icon-btn:hover,.video-play:hover{border-color:var(--accent-dim); background:#202a2d}
+.video-open-btn:disabled{cursor:not-allowed; color:var(--muted-2); opacity:.5}
+.video-window{display:flex; flex-direction:column; min-width:360px; min-height:250px;
+  background:#080b0d; border:1px solid #354049; border-radius:8px; overflow:hidden;
+  box-shadow:0 20px 55px rgba(0,0,0,.58)}
+.video-window.mode-float{position:fixed; z-index:85; width:min(620px,48vw); height:min(450px,55vh);
+  right:292px; top:82px; resize:both}
+.video-window.mode-split{position:relative; flex:0 1 46%; min-width:280px; height:auto; box-shadow:none}
+.video-window.mode-main{position:relative; flex:1; min-width:0; height:auto; box-shadow:none}
+.stage.video-split.video-narrow{flex-direction:column}
+.stage.video-split.video-narrow .video-window.mode-split{width:100%; min-width:0; min-height:180px; flex:0 1 46%}
+.video-titlebar{height:43px; flex:none; display:flex; align-items:center; gap:10px; padding:0 8px 0 12px;
+  border-bottom:1px solid var(--line); background:#11161a; user-select:none; cursor:move}
+.video-titlebar.dragging{cursor:grabbing}
+.mode-split .video-titlebar,.mode-main .video-titlebar{cursor:default}
+.video-title-copy{display:flex; flex-direction:column; min-width:0; margin-right:auto}
+.video-title-copy strong{font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.video-title-copy span{font-size:9.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.video-layout{display:flex; flex:none; border:1px solid var(--line); border-radius:6px; overflow:hidden}
+.video-mode{height:25px; padding:0 7px; border:0; border-right:1px solid var(--line);
+  background:var(--panel-2); color:var(--muted); font:600 9.5px var(--sans); cursor:pointer}
+.video-mode:last-child{border-right:0}
+.video-mode.on{background:rgba(55,229,160,.16); color:var(--accent)}
+.video-icon-btn{width:28px; height:28px; border-radius:6px; font-size:14px}
+.video-play{width:32px; height:32px; border-radius:50%; color:var(--accent); font-size:13px}
+.video-body{position:relative; flex:1; min-height:0; display:flex; background:#050607}
+.video-body video{width:100%; height:100%; object-fit:contain; background:#050607}
+.video-loading{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  color:var(--muted); background:rgba(5,6,7,.6); font-size:12px; pointer-events:none}
+.video-controls{height:48px; flex:none; display:flex; align-items:center; gap:7px; padding:7px 10px;
+  border-top:1px solid var(--line); background:#11161a}
+.video-controls #videoSeek{flex:1; min-width:70px}
+.video-controls #videoTime{width:92px; flex:none; color:var(--muted); font-size:9.5px; text-align:right}
+.video-timeline-tip{position:fixed; z-index:95; transform:translate(-50%,-100%); pointer-events:none;
+  padding:7px 9px; border:1px solid var(--accent-dim); border-radius:6px; background:#11171b;
+  color:var(--text); box-shadow:0 8px 24px rgba(0,0,0,.5); font:10px/1.45 var(--mono);
+  white-space:nowrap}
+.video-timeline-tip strong{color:var(--accent); font-weight:700}
+
 .review-refine{margin-top:14px; padding-top:12px; border-top:1px solid var(--line-soft)}
 .review-refine .rlabel{margin-bottom:8px}
 .review-refine .dir-row .rselect{min-width:120px}
@@ -561,6 +624,14 @@ input[type=range]::-moz-range-thumb{ width:14px; height:14px; border-radius:50%;
   /* narrower defaults, but still var-driven so drag-resize and collapse keep working */
   body{--left-w:200px; --right-w:232px}
   .session .path-input{width:200px}
+  .video-window.mode-float{right:24px; width:min(560px,60vw)}
+}
+@media (max-width:760px){
+  .video-window.mode-float{left:12px!important; right:12px; top:70px!important; width:auto; height:44vh; min-width:0}
+  .video-window.mode-split{min-width:0; flex-basis:48%}
+  .video-title-copy span{display:none}
+  .video-mode{padding:0 5px}
+  .video-controls #videoTime{display:none}
 }
 /* chips dropped by fitLegend() when the row would not fit on one line */
 .kc-off{display:none !important}
