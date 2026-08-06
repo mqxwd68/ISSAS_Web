@@ -4,3 +4,4 @@ python-multipart>=0.0.9
 pillow
 numpy
 scipy
+opencv-python-headless>=4.8

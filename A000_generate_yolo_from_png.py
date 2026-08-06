@@ -1,8 +1,18 @@
-import cv2
-import numpy as np
 import sys
 import os
 import traceback
+
+try:
+    import cv2
+except ModuleNotFoundError:
+    print(
+        "OpenCV is required for YOLO export. Install it in the environment "
+        "that runs server.py: python -m pip install opencv-python-headless",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+import numpy as np
 from PIL import Image
 
 
