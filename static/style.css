@@ -615,6 +615,9 @@ input[type=range]::-moz-range-thumb{ width:14px; height:14px; border-radius:50%;
   pointer-events:none}
 .video-frame-mark::before{content:""; position:absolute; left:50%; top:-4px; transform:translateX(-50%);
   border-left:4px solid transparent; border-right:4px solid transparent; border-top:5px solid #ffd166}
+.video-speed{width:58px; height:28px; flex:none; padding:0 5px; border:1px solid var(--line); border-radius:6px;
+  color:var(--text); background:var(--panel-2); font:600 10px var(--mono); cursor:pointer}
+.video-speed:hover,.video-speed:focus{border-color:var(--accent-dim); outline:none}
 .video-controls #videoTime{width:92px; flex:none; color:var(--muted); font-size:9.5px; text-align:right}
 .video-timeline-tip{position:fixed; z-index:95; transform:translate(-50%,-100%); pointer-events:none;
   padding:7px 9px; border:1px solid var(--accent-dim); border-radius:6px; background:#11171b;

@@ -1732,15 +1732,19 @@ def save(req: SaveReq):
     txt_path = os.path.join(yolo_dir, f"{base}.txt")
 
     # YOLO polygons via the existing A000 script (same as desktop tool)
-    yolo_ok, yolo_err = True, ""
+    yolo_ok, yolo_err = False, "YOLO conversion script not found"
     if os.path.exists(PNG2YOLO):
         try:
             r = subprocess.run([sys.executable, PNG2YOLO, png_path, txt_path],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, timeout=120)
             yolo_ok = r.returncode == 0
-            yolo_err = r.stderr
+            if not yolo_ok:
+                details = (r.stderr or r.stdout or "").strip()
+                yolo_err = f"YOLO converter exited with code {r.returncode}"
+                if details:
+                    yolo_err += f": {details[-1200:]}"
         except Exception as e:  # noqa: BLE001
-            yolo_ok, yolo_err = False, str(e)
+            yolo_ok, yolo_err = False, f"YOLO converter error: {e}"
 
     return {"png_path": png_path, "txt_path": txt_path if yolo_ok else None,
             "yolo_ok": yolo_ok, "yolo_err": yolo_err, "sam_path": sam_path}

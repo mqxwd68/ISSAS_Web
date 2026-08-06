@@ -56,7 +56,7 @@ const V = {
   available: false, configured: false, fps: 25, duration: 0, name: null, caseName: null,
   clipStart: 0, clipEnd: 20, center: 0, mode: 'float', open: false,
   sourceKey: null, seekToken: 0, seekPending: false, fpsSource: null, frameIndex: 0,
-  floatRect: null,
+  floatRect: null, playbackRate: 1,
 };
 
 // ---------- canvas ----------
@@ -733,8 +733,10 @@ async function doSave(){
   S.dirty=false;
   flashScreen();
   const samNote = j.sam_path? ' + SAM-raw' : '';
+  const yoloDetail = (j.yolo_err||'').replace(/\s+/g,' ').trim();
   const label = pngOnly? `Saved ✓  ${S.frames[S.idx]}  (PNG${samNote})`
-              : (j.yolo_ok? `Saved ✓  ${S.frames[S.idx]}  (PNG + YOLO${samNote})` : 'Saved PNG (YOLO failed)');
+              : (j.yolo_ok? `Saved ✓  ${S.frames[S.idx]}  (PNG + YOLO${samNote})`
+                 : `Saved PNG (YOLO failed${yoloDetail?`: ${yoloDetail.slice(0,180)}`:''})`);
   toast(label, (pngOnly||j.yolo_ok)?'ok':'err');
   if(pendingFrame!=null){ const t=pendingFrame; pendingFrame=null; loadFrame(t); }
 }
@@ -756,6 +758,17 @@ function flashScreen(){
 
 // ---------- context video ----------
 const contextVideo=$('contextVideo');
+const VIDEO_PLAYBACK_RATES=[.5,1,1.5,2];
+function setVideoPlaybackRate(value, persist=true){
+  const rate=Number(value);
+  V.playbackRate=VIDEO_PLAYBACK_RATES.includes(rate)?rate:1;
+  contextVideo.defaultPlaybackRate=V.playbackRate;
+  contextVideo.playbackRate=V.playbackRate;
+  $('videoSpeed').value=String(V.playbackRate);
+  if(persist){ try{ localStorage.setItem('issas.videoPlaybackRate',String(V.playbackRate)); }catch(_){} }
+}
+try{ setVideoPlaybackRate(localStorage.getItem('issas.videoPlaybackRate'),false); }
+catch(_){ setVideoPlaybackRate(1,false); }
 function videoTime(seconds){
   seconds=Math.max(0, Number(seconds)||0);
   const whole=Math.floor(seconds), h=Math.floor(whole/3600), m=Math.floor((whole%3600)/60), s=whole%60;
@@ -789,6 +802,7 @@ function applyVideoStatus(j){
     V.sourceKey=key;
     contextVideo.src='/api/video/file?key='+encodeURIComponent(key);
     contextVideo.load();
+    setVideoPlaybackRate(V.playbackRate,false);
   }
 }
 async function configureVideoFolder(){
@@ -1986,8 +2000,10 @@ $('videoReplay').addEventListener('click',()=>seekContextVideo(V.clipStart,true)
 $('videoPrevFrame').addEventListener('click',()=>stepVideo(-1));
 $('videoNextFrame').addEventListener('click',()=>stepVideo(1));
 $('videoSeek').addEventListener('input',e=>{ contextVideo.pause(); contextVideo.currentTime=Number(e.target.value); updateVideoControls(); });
+$('videoSpeed').addEventListener('change',e=>setVideoPlaybackRate(e.target.value));
 contextVideo.addEventListener('click',toggleVideoPlay);
 contextVideo.addEventListener('loadedmetadata',()=>{
+  setVideoPlaybackRate(V.playbackRate,false);
   if(Number.isFinite(contextVideo.duration)){ V.duration=contextVideo.duration; V.clipEnd=Math.min(V.duration,V.center+10); $('videoSeek').max=V.clipEnd; }
   updateVideoFrameMark();
   if(!V.seekPending) $('videoLoading').classList.add('hidden');
