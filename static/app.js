@@ -53,7 +53,7 @@ const S = {
 };
 
 const V = {
-  available: false, configured: false, fps: 25, duration: 0, name: null, caseName: null,
+  available: false, configured: false, fps: 0, duration: 0, name: null, caseName: null,
   clipStart: 0, clipEnd: 20, center: 0, mode: 'float', open: false,
   sourceKey: null, seekToken: 0, seekPending: false, fpsSource: null, frameIndex: 0,
   floatRect: null, playbackRate: 1,
@@ -780,21 +780,26 @@ function frameIdAt(index){
   const parts=stem.match(/\d+/g);
   return parts&&parts.length? parseInt(parts[parts.length-1],10) : index;
 }
-function videoCenterAt(index){ return frameIdAt(index)/Math.max(.01,V.fps||25); }
+function videoCenterAt(index){ return V.fps>0 ? frameIdAt(index)/V.fps : 0; }
 function applyVideoStatus(j){
   j=j||{};
   V.configured=!!j.configured; V.available=!!j.available;
-  V.fps=Number(j.fps)||V.fps||25; V.fpsSource=j.fps_source||null; V.duration=Number(j.duration)||0;
+  V.fps=Number(j.fps)>0?Number(j.fps):0; V.fpsSource=j.fps_source||null; V.duration=Number(j.duration)||0;
   V.name=j.name||null; V.caseName=j.case||null;
+  $('videoFps').value=V.fps?V.fps.toFixed(3):'';
   const badge=$('videoSourceBadge'), info=$('videoSourceInfo');
   badge.classList.toggle('ready',V.available); badge.classList.toggle('missing',V.configured&&!V.available);
   badge.textContent=V.available?'ready':(V.configured?'no match':'not set');
   if(j.directory && !$('videoPath').value) $('videoPath').value=j.directory;
-  const fpsNote=V.fpsSource==='fallback'?' (fallback; set FPS manually)':(V.fpsSource==='override'?' (manual)':' (auto)');
-  info.textContent=V.available?`${j.name} | ${V.fps.toFixed(3)} FPS${fpsNote}`
-    :(j.expected?`Waiting for ${j.expected}`:'Matches <case>.mp4');
+  const playbackFps=Number(j.playback_fps)>0?Number(j.playback_fps):V.fps;
+  const fpsNote=V.fpsSource==='unavailable'?' (unable to detect)':(V.fpsSource==='source-video'?' (source video)':' (auto)');
+  info.textContent=V.available&&V.fps?`${j.name} | ${V.fps.toFixed(3)} FPS${fpsNote}`
+    :(V.available?`${j.name} | FPS unavailable`:(j.expected?`Waiting for ${j.expected}`:'Matches <case>.mp4'));
+  if(V.available&&V.fpsSource==='source-video'&&playbackFps!==V.fps){
+    info.textContent+=` | playback ${playbackFps.toFixed(3)} FPS`;
+  }
   info.title=info.textContent;
-  $('videoOpen').disabled=!V.available||!S.count;
+  $('videoOpen').disabled=!V.available||!V.fps||!S.count;
   if(!V.available){ closeContextVideo(); contextVideo.removeAttribute('src'); V.sourceKey=null; return; }
   const key=`${j.directory||''}|${j.name||''}`;
   if(V.sourceKey!==key){
@@ -808,11 +813,11 @@ function applyVideoStatus(j){
 async function configureVideoFolder(){
   const path=$('videoPath').value.trim();
   if(!path){ toast('Enter a video folder path','err'); return; }
-  const rawFps=$('videoFps').value.trim(), fps=rawFps?Number(rawFps):null;
-  if(rawFps && (!Number.isFinite(fps)||fps<=0)){ toast('FPS must be greater than zero','err'); return; }
-  const {ok,j}=await API.post('/api/video/config',{path,fps});
+  // FPS is always read from the matched video's metadata; never reuse a case
+  // specific or browser-cached value.
+  const {ok,j}=await API.post('/api/video/config',{path,fps:null});
   if(!ok){ toast(j.detail||'video folder could not be opened','err'); return; }
-  try{ localStorage.setItem('issas.videoPath',path); localStorage.setItem('issas.videoFps',rawFps); }catch(_){}
+  try{ localStorage.setItem('issas.videoPath',path); localStorage.removeItem('issas.videoFps'); }catch(_){}
   applyVideoStatus(j);
   toast(j.available?`Matched ${j.name}`:`Folder set; ${j.expected||'case video'} was not found`,j.available?'ok':'err');
 }
@@ -975,7 +980,8 @@ async function toggleVideoPlay(){
 }
 function stepVideo(direction){
   contextVideo.pause();
-  const target=Math.min(V.clipEnd,Math.max(V.clipStart,(contextVideo.currentTime||V.center)+direction/Math.max(.01,V.fps)));
+  if(!(V.fps>0)) return;
+  const target=Math.min(V.clipEnd,Math.max(V.clipStart,(contextVideo.currentTime||V.center)+direction/V.fps));
   seekContextVideo(target,false);
 }
 function timelineIndex(e){
@@ -2377,10 +2383,10 @@ async function loadImagesHere(path){
   try{ const r=await API.get('/api/tree_root'); if(!$('fdRoot').value) $('fdRoot').value=r.root; }catch(_){}
   try{
     const savedPath=localStorage.getItem('issas.videoPath')||'';
-    const savedFps=localStorage.getItem('issas.videoFps')||'';
+    localStorage.removeItem('issas.videoFps');
     if(savedPath){
-      $('videoPath').value=savedPath; $('videoFps').value=savedFps;
-      const {ok,j}=await API.post('/api/video/config',{path:savedPath,fps:savedFps?Number(savedFps):null});
+      $('videoPath').value=savedPath; $('videoFps').value='';
+      const {ok,j}=await API.post('/api/video/config',{path:savedPath,fps:null});
       if(ok) applyVideoStatus(j); else applyVideoStatus(await API.get('/api/video/status'));
     } else applyVideoStatus(await API.get('/api/video/status'));
   }catch(_){}
