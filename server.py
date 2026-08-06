@@ -287,8 +287,8 @@ def _probe_mp4(path: str):
     return None
 
 
-def _probe_video(path: str, cache: bool = True):
-    cached = SESSION.video_probe if cache else None
+def _probe_video(path: str):
+    cached = SESSION.video_probe
     stamp = (path, os.path.getmtime(path), SESSION.video_fps_override)
     if cached and cached.get("_stamp") == stamp:
         return cached
@@ -328,22 +328,8 @@ def _probe_video(path: str, cache: bool = True):
         # drift further from the annotated frame as the frame id increases.
         info["fps"] = None
         info["fps_source"] = "unavailable"
-    if cache:
-        SESSION.video_probe = info
+    SESSION.video_probe = info
     return info
-
-
-def _timeline_video_path(path: str) -> str:
-    """Find the source video whose frame numbering the resized copy preserves."""
-    video_dir = os.path.dirname(path)
-    folder = os.path.basename(video_dir)
-    # Resized datasets commonly keep the source directory beside a folder such
-    # as *_480p. This discovers that relationship without storing case FPS data.
-    source_folder = re.sub(r"_\d+p$", "", folder, flags=re.IGNORECASE)
-    if source_folder == folder:
-        return path
-    candidate = os.path.join(os.path.dirname(video_dir), source_folder, os.path.basename(path))
-    return candidate if os.path.isfile(candidate) else path
 
 
 def _video_status():
@@ -354,14 +340,10 @@ def _video_status():
                 "directory": SESSION.video_dir_display or SESSION.video_dir, "case": case,
                 "expected": f"{case}.mp4" if case else None}
     probe = _probe_video(path)
-    timeline_path = _timeline_video_path(path)
-    timeline_probe = _probe_video(timeline_path, cache=False) if timeline_path != path else probe
-    timeline_fps = timeline_probe["fps"] or probe["fps"]
-    fps_source = "source-video" if timeline_path != path and timeline_probe["fps"] else probe["fps_source"]
     return {"configured": True, "available": True,
             "directory": SESSION.video_dir_display or SESSION.video_dir,
-            "case": case, "name": os.path.basename(path), "fps": timeline_fps,
-            "fps_source": fps_source, "playback_fps": probe["fps"],
+            "case": case, "name": os.path.basename(path), "fps": probe["fps"],
+            "fps_source": probe["fps_source"],
             "duration": probe["duration"], "width": probe["width"], "height": probe["height"]}
 
 

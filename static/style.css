@@ -610,6 +610,9 @@ input[type=range]::-moz-range-thumb{ width:14px; height:14px; border-radius:50%;
   border-top:1px solid var(--line); background:#11161a}
 .video-seek-wrap{position:relative; display:flex; align-items:center; flex:1; min-width:70px}
 .video-controls #videoSeek{width:100%; min-width:0}
+.video-center-btn{width:32px; height:32px; flex:none; padding:0; border-radius:50%;
+  color:#ffd166; border:1px solid var(--line); background:var(--panel-2); font:700 12px var(--mono)}
+.video-center-btn:hover,.video-center-btn:focus{border-color:#ffd166; outline:none}
 .video-frame-mark{position:absolute; z-index:2; left:var(--frame-mark-pos,50%); top:50%; width:2px; height:16px;
   transform:translate(-1px,-50%); border-radius:1px; background:#ffd166; box-shadow:0 0 0 1px rgba(8,11,13,.65);
   pointer-events:none}
@@ -618,7 +621,7 @@ input[type=range]::-moz-range-thumb{ width:14px; height:14px; border-radius:50%;
 .video-speed{width:58px; height:28px; flex:none; padding:0 5px; border:1px solid var(--line); border-radius:6px;
   color:var(--text); background:var(--panel-2); font:600 10px var(--mono); cursor:pointer}
 .video-speed:hover,.video-speed:focus{border-color:var(--accent-dim); outline:none}
-.video-controls #videoTime{width:92px; flex:none; color:var(--muted); font-size:9.5px; text-align:right}
+.video-controls #videoTime{width:108px; flex:none; color:var(--muted); font-size:9.5px; text-align:right}
 .video-timeline-tip{position:fixed; z-index:95; transform:translate(-50%,-100%); pointer-events:none;
   padding:7px 9px; border:1px solid var(--accent-dim); border-radius:6px; background:#11171b;
   color:var(--text); box-shadow:0 8px 24px rgba(0,0,0,.5); font:10px/1.45 var(--mono);

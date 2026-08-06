@@ -769,10 +769,12 @@ function setVideoPlaybackRate(value, persist=true){
 }
 try{ setVideoPlaybackRate(localStorage.getItem('issas.videoPlaybackRate'),false); }
 catch(_){ setVideoPlaybackRate(1,false); }
-function videoTime(seconds){
+function videoTime(seconds, decimals=0){
   seconds=Math.max(0, Number(seconds)||0);
-  const whole=Math.floor(seconds), h=Math.floor(whole/3600), m=Math.floor((whole%3600)/60), s=whole%60;
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  const factor=10**decimals, rounded=Math.round(seconds*factor)/factor;
+  const whole=Math.floor(rounded), h=Math.floor(whole/3600), m=Math.floor((whole%3600)/60), s=whole%60;
+  const fraction=decimals?'.'+String(Math.round((rounded-whole)*factor)).padStart(decimals,'0'):'';
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}${fraction}`;
 }
 function frameIdAt(index){
   const name=S.frames[index]||'';
@@ -866,14 +868,14 @@ function closeContextVideo(){
 function updateVideoControls(){
   const t=Number(contextVideo.currentTime)||V.clipStart;
   $('videoSeek').value=Math.min(V.clipEnd,Math.max(V.clipStart,t));
-  $('videoTime').textContent=`${videoTime(t)} / ${videoTime(V.clipEnd)}`;
+  $('videoTime').textContent=`${videoTime(t,1)} / ${videoTime(V.clipEnd,1)}`;
   $('videoPlayPause').textContent=contextVideo.paused?'\u25B6':'\u23F8';
 }
 function updateVideoFrameMark(){
   const span=Math.max(.01,V.clipEnd-V.clipStart);
   const pct=Math.max(0,Math.min(100,(V.center-V.clipStart)/span*100));
   $('videoSeekWrap').style.setProperty('--frame-mark-pos',pct+'%');
-  $('videoFrameMark').title=`Observed frame: ${S.frames[V.frameIndex]||'frame'} at ${videoTime(V.center)}`;
+  $('videoFrameMark').title=`Observed frame: ${S.frames[V.frameIndex]||'frame'} at ${videoTime(V.center,2)}`;
 }
 function waitForVideoMetadata(token){
   if(contextVideo.readyState>=1 && Number.isFinite(contextVideo.duration)) return Promise.resolve(true);
@@ -980,8 +982,7 @@ async function toggleVideoPlay(){
 }
 function stepVideo(direction){
   contextVideo.pause();
-  if(!(V.fps>0)) return;
-  const target=Math.min(V.clipEnd,Math.max(V.clipStart,(contextVideo.currentTime||V.center)+direction/V.fps));
+  const target=Math.min(V.clipEnd,Math.max(V.clipStart,(contextVideo.currentTime||V.center)+direction));
   seekContextVideo(target,false);
 }
 function timelineIndex(e){
@@ -2005,6 +2006,7 @@ $('videoPlayPause').addEventListener('click',toggleVideoPlay);
 $('videoReplay').addEventListener('click',()=>seekContextVideo(V.clipStart,true));
 $('videoPrevFrame').addEventListener('click',()=>stepVideo(-1));
 $('videoNextFrame').addEventListener('click',()=>stepVideo(1));
+$('videoCenter').addEventListener('click',()=>seekContextVideo(V.center,false));
 $('videoSeek').addEventListener('input',e=>{ contextVideo.pause(); contextVideo.currentTime=Number(e.target.value); updateVideoControls(); });
 $('videoSpeed').addEventListener('change',e=>setVideoPlaybackRate(e.target.value));
 contextVideo.addEventListener('click',toggleVideoPlay);
