@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ISSAS — Interactive Annotation</title>
-  <link rel="stylesheet" href="/static/style.css?v=20260805a" />
+  <link rel="stylesheet" href="/static/style.css?v=20260809a" />
 </head>
 <body>
   <!-- ===== Top bar ===== -->
@@ -464,6 +464,10 @@
     <div class="modal-card modal-narrow">
       <div class="modal-head"><span id="uiDialogTitle">Confirm</span></div>
       <div id="uiDialogBody" class="reminder-body"></div>
+      <label id="uiDialogOption" class="confirm-option hidden">
+        <input id="uiDialogCheck" type="checkbox" />
+        <span id="uiDialogCheckLabel">Don't ask again</span>
+      </label>
       <div class="reminder-foot">
         <button id="uiDialogCancel" class="btn">Cancel</button>
         <button id="uiDialogOk" class="btn btn-accent">OK</button>
@@ -496,6 +500,6 @@
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="/static/app.js?v=20260805a"></script>
+  <script src="/static/app.js?v=20260809a"></script>
 </body>
 </html>

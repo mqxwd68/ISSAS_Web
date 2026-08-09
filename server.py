@@ -1266,17 +1266,36 @@ def review_frames_base():
 
 
 class ResolveFramesReq(BaseModel):
-    base: str
     case: str
+    root: str = ""
+    annotators: Optional[List[str]] = None
+    base: str = ""  # legacy fallback for older frontends
 
 
 @app.post("/api/review/resolve_frames")
 def resolve_frames(req: ResolveFramesReq):
-    """Find the actual image folder for a case: <base>/<case>/images or <base>/<case>."""
-    base = _norm(req.base)
+    """Prefer annotator A's images, then B's; otherwise require manual selection."""
     exts = (".jpg", ".jpeg", ".png", ".tiff", ".bmp")
+
+    def has_images(directory):
+        return (os.path.isdir(directory)
+                and any(f.lower().endswith(exts) for f in os.listdir(directory)))
+
+    root = os.path.abspath(_norm(req.root)) if req.root else ""
+    tried = []
+    if root and req.annotators is not None:
+        for ann in req.annotators:
+            directory = os.path.join(root, ann, req.case, "images")
+            tried.append(directory)
+            if has_images(directory):
+                return {"dir": directory, "found": True,
+                        "annotator": ann, "tried": tried}
+        return {"dir": "", "found": False, "annotator": None, "tried": tried}
+
+    # Preserve compatibility with clients that still send the old shared base.
+    base = _norm(req.base)
     for d in (os.path.join(base, req.case, "images"), os.path.join(base, req.case)):
-        if os.path.isdir(d) and any(f.lower().endswith(exts) for f in os.listdir(d)):
+        if has_images(d):
             return {"dir": d, "found": True}
     return {"dir": os.path.join(base, req.case), "found": False}
 
@@ -1572,6 +1591,21 @@ def _class_name_for_id(cid):
         if i == cid:
             return name
     return f"class_{cid}"
+
+
+@app.get("/api/import_mask/default_dir")
+def import_mask_default_dir():
+    """Use the case's sibling masks folder, falling back to the open images folder."""
+    if not SESSION.frame_dir:
+        return {"dir": DEFAULT_BROWSE_PATH, "found": False}
+    frame_dir = os.path.abspath(_norm(SESSION.frame_dir))
+    leaf = os.path.basename(os.path.normpath(frame_dir)).lower()
+    image_names = {"images", "image", "imgs", "frames", "frame", "jpeg", "jpg", "png"}
+    case_dir = os.path.dirname(frame_dir) if leaf in image_names else frame_dir
+    masks_dir = os.path.join(case_dir, "masks")
+    if os.path.isdir(masks_dir):
+        return {"dir": masks_dir, "found": True}
+    return {"dir": frame_dir, "found": False}
 
 
 @app.post("/api/import_mask")

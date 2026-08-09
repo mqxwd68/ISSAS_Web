@@ -136,11 +136,20 @@ function uiConfirm(message, opts){
     $('uiDialogTitle').textContent=opts.title||'Please confirm';
     $('uiDialogBody').textContent=message;
     const ok=$('uiDialogOk'), cancel=$('uiDialogCancel'), modal=$('uiDialog');
+    const option=$('uiDialogOption'), check=$('uiDialogCheck');
+    check.checked=false;
+    option.classList.toggle('hidden', !opts.checkboxLabel);
+    $('uiDialogCheckLabel').textContent=opts.checkboxLabel||'';
     ok.textContent=opts.okText||'OK';
     ok.style.cssText = opts.danger? 'background:#7a2a2a;border-color:#7a2a2a;color:#ffdede' : '';
     ok.className='btn '+(opts.danger?'':'btn-accent');
     modal.classList.remove('hidden');
-    const done=(v)=>{ modal.classList.add('hidden'); ok.onclick=cancel.onclick=modal.onclick=null; resolve(v); };
+    const done=(v)=>{
+      const checked=check.checked;
+      modal.classList.add('hidden'); option.classList.add('hidden');
+      ok.onclick=cancel.onclick=modal.onclick=null;
+      resolve(opts.checkboxLabel? {confirmed:v, checked:v&&checked} : v);
+    };
     ok.onclick=()=>done(true); cancel.onclick=()=>done(false);
     modal.onclick=e=>{ if(e.target.id==='uiDialog') done(false); };
   });
@@ -1485,7 +1494,10 @@ function renderAnnChecks(){
   const withCase = all? R.scan.annotators.filter(a=>Object.keys(a.cases).length)
                       : R.scan.annotators.filter(a=>a.cases[c]);
   $('refineAnn').innerHTML=withCase.map(a=>`<option>${a.id}</option>`).join('');
-  if(!all) resolveFramesDir(c).then(d=>{ $('refineFrames').value=d; });
+  if(!all){
+    const preferred=withCase.filter(a=>!a.is_sam).map(a=>a.id).slice(0,2);
+    resolveFramesDir(c, preferred).then(d=>{ $('refineFrames').value=d; });
+  }
   if(!withCase.length){ box.innerHTML='<span class="muted">No annotators here.</span>'; return; }
   for(const a of withCase){
     const el=document.createElement('label'); el.className='rcheck';
@@ -1496,11 +1508,15 @@ function renderAnnChecks(){
     box.appendChild(el);
   }
 }
-async function resolveFramesDir(cse){
-  if(!R.framesBase){ try{ const b=await API.get('/api/review/frames_base'); R.framesBase=b.base; }catch(_){ R.framesBase=''; } }
-  const {ok,j}=await API.post('/api/review/resolve_frames',{base:R.framesBase, case:cse});
-  if(ok && !j.found) toast(`No images found under ${j.dir} — set the frames folder manually`,'err');
-  return ok? j.dir : (R.framesBase? R.framesBase+'/'+cse : '');
+async function resolveFramesDir(cse, annotators){
+  const root=$('reviewRoot').value.trim();
+  const {ok,j}=await API.post('/api/review/resolve_frames',{
+    root, case:cse, annotators:annotators||[],
+  });
+  if(ok && !j.found){
+    toast('No images folder found for annotator A or B — set the frames folder manually','err');
+  }
+  return ok? (j.dir||'') : '';
 }
 async function reviewCompute(){
   const root=$('reviewRoot').value.trim(); const c=$('reviewCase').value;
@@ -1632,8 +1648,8 @@ $('cmpShowFrame').addEventListener('change',e=>{ C.showFrame=e.target.checked;
 $('cmpPrev').addEventListener('click',()=>loadCmpFrame(C.idx-1));
 $('cmpNext').addEventListener('click',()=>loadCmpFrame(C.idx+1));
 $('cmpSlider').addEventListener('change',e=>loadCmpFrame(+e.target.value));
-$('cmpA').addEventListener('change',()=>{ C.a=$('cmpA').value; reloadCmpFrames(); });
-$('cmpB').addEventListener('change',()=>{ C.b=$('cmpB').value; reloadCmpFrames(); });
+$('cmpA').addEventListener('change',async()=>{ C.a=$('cmpA').value; await setCompareFramesDir(); reloadCmpFrames(); });
+$('cmpB').addEventListener('change',async()=>{ C.b=$('cmpB').value; await setCompareFramesDir(); reloadCmpFrames(); });
 segBind('cmpMode','cm',v=>{ C.mode=v; buildCmpLayers(); cmpRender(); updateLegend(); });
 $('cmpSort').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
   const key=b.dataset.cs;
@@ -1658,7 +1674,7 @@ async function openCompare(){
   $('cmpA').value=C.a; $('cmpB').value=C.b;
   $('compareModal').classList.remove('hidden'); C.open=true;
   // default frames folder for this case, so the background shows without extra steps
-  C.framesDir = await resolveFramesDir(C.case);
+  C.framesDir = await resolveFramesDir(C.case, [C.a,C.b]);
   $('cmpFramesDir').value = C.framesDir; C.showFrame=true; $('cmpShowFrame').checked=true;
   const card=$('compareModal').querySelector('.compare-card');
   if(!card._dragInit){ makeDraggable(card, card.querySelector('.modal-head'));
@@ -1666,6 +1682,10 @@ async function openCompare(){
   card._resetDrag && card._resetDrag();
   compareResize();
   await reloadCmpFrames();
+}
+async function setCompareFramesDir(){
+  C.framesDir=await resolveFramesDir(C.case,[C.a,C.b]);
+  $('cmpFramesDir').value=C.framesDir;
 }
 function makeDraggable(card, handle){
   let dx=0,dy=0,sx,sy,drag=false;
@@ -1904,11 +1924,15 @@ function updateImportBtn(kind){
 function updateImportBtns(){ updateImportBtn('mask'); updateImportBtn('prompts'); }
 
 // open the picker; on select remember the folder and (optionally) import straight away
-function chooseImportDir(kind, thenImport){
+async function chooseImportDir(kind, thenImport){
   const K = IMPORT_KIND[kind];
+  let start=S[K.state];
+  if(!start && kind==='mask'){
+    try{ const d=await API.get('/api/import_mask/default_dir'); start=d.dir||null; }catch(_){}
+  }
   openBrowser({
     title: K.title,
-    start: S[K.state] || $('folderPath').value.trim() || S.defaultPath,
+    start: start || $('folderPath').value.trim() || S.defaultPath,
     onSelect: (dir)=>{
       if(!dir) return;
       setImportDir(kind, dir);
@@ -1960,7 +1984,9 @@ async function doImportMask(dir){
     importedThisSession=true;
     S.propagation=false; $('propBtn').textContent='Propagation: OFF'; $('propBtn').classList.remove('on');
   }
-  S.dirty=true; rebuildObjList(); render(); toast('Imported '+r.n+' masks','ok');
+  // A disk import is a clean baseline. Any dirty flag that already existed is
+  // preserved, but importing alone must not trigger the unsaved-edit reminder.
+  rebuildObjList(); render(); toast('Imported '+r.n+' masks','ok');
 }
 
 $('importPromptsBtn').addEventListener('click', ()=>runImport('prompts'));
@@ -2336,9 +2362,23 @@ async function buildTreeNode(path, name, depth){
   row.addEventListener('contextmenu', e=>{ e.preventDefault(); showTreeCtx(e.clientX, e.clientY, path); });
   return node;
 }
+let skipLoadConfirm=(()=>{
+  try{ return sessionStorage.getItem('issas.skipLoadConfirm')==='1'; }
+  catch(_){ return false; }
+})();
 async function confirmLoad(path){
+  if(skipLoadConfirm){ loadImagesHere(path); return; }
   const warn = S.dirty? ' You have unsaved edits that will be discarded.' : '';
-  if(await uiConfirm(`Load images from: ${path}. This clears SAM memory and starts a new case.${warn}`, {title:'Load images', okText:'Load'})) loadImagesHere(path);
+  const decision=await uiConfirm(
+    `Load images from: ${path}. This clears SAM memory and starts a new case.${warn}`,
+    {title:'Load images', okText:'Load', checkboxLabel:"Don't ask again"});
+  if(decision.confirmed){
+    if(decision.checked){
+      skipLoadConfirm=true;
+      try{ sessionStorage.setItem('issas.skipLoadConfirm','1'); }catch(_){}
+    }
+    loadImagesHere(path);
+  }
 }
 function showTreeCtx(x,y,path){
   const m=$('fdContextMenu');

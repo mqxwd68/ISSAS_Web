@@ -473,6 +473,10 @@ input[type=range]::-moz-range-thumb{ width:14px; height:14px; border-radius:50%;
 
 /* unsaved-changes reminder */
 .reminder-body{padding:18px 18px 6px; font-size:13px; line-height:1.5; color:var(--text)}
+.confirm-option{display:flex; align-items:center; gap:9px; width:max-content; max-width:calc(100% - 36px);
+  margin:12px 18px 0; color:var(--text); font-size:12px; cursor:pointer; user-select:none}
+.confirm-option.hidden{display:none}
+.confirm-option input{accent-color:var(--accent); width:16px; height:16px; margin:0; cursor:pointer}
 .reminder-foot{display:flex; justify-content:flex-end; gap:8px; padding:16px 18px 18px; flex-wrap:wrap}
 
 /* review mode */
