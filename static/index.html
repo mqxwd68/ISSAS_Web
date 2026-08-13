@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ISSAS — Interactive Annotation</title>
-  <link rel="stylesheet" href="/static/style.css?v=20260809a" />
+  <link rel="stylesheet" href="/static/style.css?v=20260813c" />
 </head>
 <body>
   <!-- ===== Top bar ===== -->
@@ -145,6 +145,7 @@
             <button class="video-mode" data-video-mode="split" title="Split with annotation">Split</button>
             <button class="video-mode" data-video-mode="main" title="Replace annotation view">Main</button>
           </div>
+          <button id="contextAnnotationOpen" class="video-context-open" title="Open context annotation (O)">Context</button>
           <button id="videoClose" class="video-icon-btn" title="Close context video" aria-label="Close context video">&times;</button>
         </div>
         <div class="video-body">
@@ -154,22 +155,70 @@
         <div class="video-controls">
           <button id="videoPrevFrame" class="video-icon-btn" title="Back 1 second" aria-label="Back 1 second">&#9198;</button>
           <button id="videoReplay" class="video-icon-btn" title="Replay context" aria-label="Replay context">&#8635;</button>
+          <button id="videoLoop" class="video-icon-btn" title="Loop clip" aria-label="Loop clip" aria-pressed="false">&#8734;</button>
           <button id="videoPlayPause" class="video-play" title="Play or pause" aria-label="Play or pause">&#9654;</button>
           <button id="videoNextFrame" class="video-icon-btn" title="Forward 1 second" aria-label="Forward 1 second">&#9197;</button>
           <button id="videoCenter" class="video-center-btn" title="Jump to observed frame" aria-label="Jump to observed frame">C</button>
           <div id="videoSeekWrap" class="video-seek-wrap">
             <input id="videoSeek" type="range" min="0" max="20" step="0.01" value="0" aria-label="Context playback position" />
             <span id="videoFrameMark" class="video-frame-mark" title="Observed frame position" aria-hidden="true"></span>
+            <button id="videoSeekTimestamp" class="video-seek-timestamp hidden" type="button" title="Copy clip timestamp">00:00</button>
+          </div>
+          <div class="video-context" role="group" aria-label="Playback context">
+            <button id="videoContext10" type="button" class="video-context-btn on" data-video-context="10" title="10 seconds before and after" aria-pressed="true">&plusmn;10s</button>
+            <button id="videoContext30" type="button" class="video-context-btn" data-video-context="30" title="30 seconds before and after" aria-pressed="false">&plusmn;30s</button>
           </div>
           <select id="videoSpeed" class="video-speed" title="Playback speed" aria-label="Playback speed">
             <option value="0.5">0.5&times;</option>
             <option value="1" selected>1.0&times;</option>
             <option value="1.5">1.5&times;</option>
             <option value="2">2.0&times;</option>
+            <option value="2.5">2.5&times;</option>
+            <option value="3">3.0&times;</option>
+            <option value="3.5">3.5&times;</option>
+            <option value="4">4.0&times;</option>
           </select>
           <span id="videoTime" class="mono">00:00 / 00:20</span>
         </div>
       </div>
+      <section id="contextAnnotationPanel" class="context-annotation mode-dock hidden" aria-label="Context annotation panel">
+        <header id="contextAnnotationDrag" class="context-annotation-head">
+          <div class="context-annotation-title"><strong>Context annotation</strong><span id="contextAnnotationStatus">not saved</span></div>
+          <div class="context-annotation-modes" role="group" aria-label="Context annotation layout">
+            <button id="contextModeDock" class="on" type="button">Dock</button>
+            <button id="contextModeFloat" type="button">Float</button>
+          </div>
+          <button id="contextAnnotationClose" class="video-icon-btn" title="Close context annotation" aria-label="Close context annotation">&times;</button>
+        </header>
+        <div class="context-annotation-body">
+          <div class="context-meta-grid">
+            <div><span>Frame ID</span><strong id="contextFrameId" class="mono">-</strong></div>
+            <div><span>Time range</span><strong id="contextTimeRange" class="mono">-</strong></div>
+            <div><span>FPS</span><strong id="contextFps" class="mono">-</strong></div>
+          </div>
+          <div class="context-auto-row"><span class="context-label">Phase</span><div id="contextPhase" class="context-rich context-phase muted">No workflow map found</div></div>
+          <div class="context-auto-row"><span class="context-label">Appear</span><div id="contextAppear" class="context-rich context-appear muted">No current GT classes</div></div>
+          <div class="context-form-grid">
+            <label class="context-field"><span>Action</span><div id="contextAction" class="context-edit" contenteditable="true" role="textbox" data-placeholder="The Straight grasper retracts lymphatic tissue while the Harmonic scalpel separates tissue along the vessel plane."></div></label>
+            <label class="context-field"><span>Intent</span><div id="contextIntent" class="context-edit" contenteditable="true" role="textbox" data-placeholder="Progressive exposure of the Hepatic artery following tissue dissection."></div></label>
+            <label class="context-field"><span>Tissue state</span><div id="contextTissueState" class="context-edit" contenteditable="true" role="textbox" data-placeholder="The vessel changes from partially covered to more clearly exposed."></div></label>
+            <label class="context-field"><span>Free-text operative context</span><div id="contextFreeText" class="context-edit" contenteditable="true" role="textbox" data-placeholder="Moderate confidence for the Left gastric vein because only a short segment is visible."></div></label>
+          </div>
+          <fieldset class="context-visibility">
+            <legend>Visibility</legend>
+            <label><input id="contextSmokeCheck" type="checkbox"><span>Smoke</span><div id="contextSmoke" class="context-edit compact" contenteditable="true" role="textbox" data-placeholder="Brief smoke"></div></label>
+            <label><input id="contextBleedingCheck" type="checkbox"><span>Bleeding</span><div id="contextBleeding" class="context-edit compact" contenteditable="true" role="textbox" data-placeholder="No active bleeding"></div></label>
+            <label><input id="contextOcclusionCheck" type="checkbox"><span>Occlusion</span><div id="contextOcclusion" class="context-edit compact" contenteditable="true" role="textbox" data-placeholder="Vessel is partially occluded by fat"></div></label>
+          </fieldset>
+        </div>
+        <footer class="context-annotation-foot">
+          <span id="contextAnnotationPath" class="mono muted">No context folder selected</span>
+          <button id="contextImport" class="btn small" type="button">Import</button>
+          <button id="contextImportDir" class="video-icon-btn" type="button" title="Change context import folder" aria-label="Change context import folder">&#128193;</button>
+          <button id="contextSave" class="btn small btn-accent" type="button">Save</button>
+        </footer>
+        <div id="contextSuggest" class="context-suggest hidden" role="listbox"></div>
+      </section>
     </section>
 
     <!-- Right: tools -->
@@ -253,7 +302,7 @@
         <button id="nextBtn" class="btn small">Next ➡</button>
         <input id="frameSlider" class="frame-slider" type="range" min="0" max="0" value="0" />
         <span id="position" class="mono muted">0 / 0</span>
-        <button id="videoOpen" class="video-open-btn" title="Play 10 seconds before and after this frame" aria-label="Open context video" disabled>&#9654;</button>
+        <button id="videoOpen" class="video-open-btn" title="Play 10 seconds before and after this frame (P)" aria-label="Open context video" disabled>&#9654;</button>
         <input id="jumpInput" class="path-input tiny" placeholder="jump" spellcheck="false" />
         <button id="jumpBtn" class="btn small">Go</button>
       </div>
@@ -273,6 +322,7 @@
         <span class="kc" data-pri="1"><span class="cap">H</span>comp</span>
         <span class="kc" data-pri="2"><span class="cap">R</span>reset</span>
         <span class="kc" data-pri="0"><span class="cap">Q</span>import</span>
+        <span class="kc" data-pri="0"><span class="cap">P</span>video</span>
         <span class="kc" data-pri="0"><span class="cap">⌃Z</span>undo</span>
         <span class="kc" data-pri="0"><span class="cap">⌃S</span>save</span>
         <span class="kc" data-pri="3"><span class="cap">⌃F</span>full</span>
@@ -500,6 +550,6 @@
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="/static/app.js?v=20260809a"></script>
+  <script src="/static/app.js?v=20260813f"></script>
 </body>
 </html>

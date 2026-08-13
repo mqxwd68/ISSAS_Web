@@ -56,8 +56,19 @@ const V = {
   available: false, configured: false, fps: 0, duration: 0, name: null, caseName: null,
   clipStart: 0, clipEnd: 20, center: 0, mode: 'float', open: false,
   sourceKey: null, seekToken: 0, seekPending: false, fpsSource: null, frameIndex: 0,
-  floatRect: null, playbackRate: 1,
+  floatRect: null, playbackRate: 1, contextSeconds: 10, loop: false,
+  workflow: {available:false,phaseNames:{},intervals:[]},
 };
+
+const CA = {
+  open:false, mode:'dock', dirty:false, saveDir:null, importDir:null, defaultDir:null,
+  floatRect:null, history:[], future:[], restoring:false, activeEditor:null, suggestions:[], suggestionIndex:0,
+  drafts:new Map(), activeFrame:null, dockedVideoRect:null, caseRoot:null,
+  appear:[], appearFrame:null, appearToken:0,
+};
+try{
+  CA.mode=localStorage.getItem('issas.contextMode')||'dock';
+}catch(_){}
 
 // ---------- canvas ----------
 const canvas = $('canvas');
@@ -526,6 +537,7 @@ function rebuildObjList(){
     });
     box.appendChild(el);
   }
+  if(CA.open) refreshContextAppear();
 }
 
 // ---------- prediction ----------
@@ -657,6 +669,7 @@ async function propagateInto(idx){
 async function loadFrame(newIdx, opts={}){
   newIdx=clampi(newIdx,0,S.count-1);
   const oldIdx=S.idx;
+  if(CA.open&&CA.activeFrame!=null) CA.drafts.set(CA.activeFrame,{snapshot:contextSnapshot(),dirty:CA.dirty});
   const wasDirty=S.dirty;   // did the user add/edit masks on the frame we're leaving?
   if(newIdx===oldIdx && !opts.force) return;
   if(!opts.skipCommit) commitFrame(oldIdx);
@@ -672,6 +685,11 @@ async function loadFrame(newIdx, opts={}){
   $('position').textContent=`${S.idx+1} / ${S.count}`;
   $('frameSlider').value=S.idx;
   if(V.open) positionContextVideo(S.idx,false);
+  if(CA.open){
+    CA.activeFrame=S.idx; const draft=CA.drafts.get(S.idx);
+    if(draft){ restoreContextSnapshot(draft.snapshot); setContextStatus(draft.dirty?'edited':'draft',draft.dirty); }
+    else clearContextForm();
+  }
 
   const forward = newIdx > oldIdx;
   const firstVisit = !S.frameMasks.has(newIdx);
@@ -767,7 +785,8 @@ function flashScreen(){
 
 // ---------- context video ----------
 const contextVideo=$('contextVideo');
-const VIDEO_PLAYBACK_RATES=[.5,1,1.5,2];
+const VIDEO_PLAYBACK_RATES=[.5,1,1.5,2,2.5,3,3.5,4];
+const VIDEO_CONTEXT_SECONDS=[10,30];
 function setVideoPlaybackRate(value, persist=true){
   const rate=Number(value);
   V.playbackRate=VIDEO_PLAYBACK_RATES.includes(rate)?rate:1;
@@ -778,6 +797,20 @@ function setVideoPlaybackRate(value, persist=true){
 }
 try{ setVideoPlaybackRate(localStorage.getItem('issas.videoPlaybackRate'),false); }
 catch(_){ setVideoPlaybackRate(1,false); }
+function setVideoContextSeconds(value, persist=true, reposition=false){
+  const seconds=Number(value);
+  V.contextSeconds=VIDEO_CONTEXT_SECONDS.includes(seconds)?seconds:10;
+  document.querySelectorAll('[data-video-context]').forEach(btn=>{
+    const selected=Number(btn.dataset.videoContext)===V.contextSeconds;
+    btn.classList.toggle('on',selected);
+    btn.setAttribute('aria-pressed',String(selected));
+  });
+  $('videoOpen').title=`Play ${V.contextSeconds} seconds before and after this frame (P)`;
+  if(persist){ try{ localStorage.setItem('issas.videoContextSeconds',String(V.contextSeconds)); }catch(_){} }
+  if(reposition&&V.open) positionContextVideo(V.frameIndex,!contextVideo.paused);
+}
+try{ setVideoContextSeconds(localStorage.getItem('issas.videoContextSeconds'),false); }
+catch(_){ setVideoContextSeconds(10,false); }
 function videoTime(seconds, decimals=0){
   seconds=Math.max(0, Number(seconds)||0);
   const factor=10**decimals, rounded=Math.round(seconds*factor)/factor;
@@ -797,6 +830,7 @@ function applyVideoStatus(j){
   V.configured=!!j.configured; V.available=!!j.available;
   V.fps=Number(j.fps)>0?Number(j.fps):0; V.fpsSource=j.fps_source||null; V.duration=Number(j.duration)||0;
   V.name=j.name||null; V.caseName=j.case||null;
+  V.workflow={available:!!j.workflow?.available, phaseNames:j.workflow?.phase_names||{}, intervals:j.workflow?.intervals||[]};
   $('videoFps').value=V.fps?V.fps.toFixed(3):'';
   const badge=$('videoSourceBadge'), info=$('videoSourceInfo');
   badge.classList.toggle('ready',V.available); badge.classList.toggle('missing',V.configured&&!V.available);
@@ -811,6 +845,7 @@ function applyVideoStatus(j){
   }
   info.title=info.textContent;
   $('videoOpen').disabled=!V.available||!V.fps||!S.count;
+  if(CA.open) refreshContextAnnotationMeta();
   if(!V.available){ closeContextVideo(); contextVideo.removeAttribute('src'); V.sourceKey=null; return; }
   const key=`${j.directory||''}|${j.name||''}`;
   if(V.sourceKey!==key){
@@ -861,6 +896,10 @@ function setVideoMode(mode){
   stage.classList.toggle('video-main',mode==='main'&&V.open);
   syncVideoSplitDirection();
   document.querySelectorAll('.video-mode').forEach(b=>b.classList.toggle('on',b.dataset.videoMode===mode));
+  if(CA.open){
+    $('contextAnnotationPanel').classList.toggle('split-context',mode==='split');
+    requestAnimationFrame(positionContextAnnotation);
+  }
   requestAnimationFrame(resizeCanvas); setTimeout(resizeCanvas,80);
 }
 function syncVideoSplitDirection(){
@@ -868,6 +907,7 @@ function syncVideoSplitDirection(){
   stage.classList.toggle('video-narrow',V.open&&V.mode==='split'&&stage.clientWidth<720);
 }
 function closeContextVideo(){
+  if(CA.open) closeContextAnnotation();
   V.open=false; V.seekToken++; V.seekPending=false; contextVideo.pause();
   $('videoLoading').classList.add('hidden');
   const win=$('videoWindow'); win.classList.add('hidden');
@@ -944,7 +984,7 @@ async function seekContextVideo(target, autoplay){
   if(token!==V.seekToken) return false;
 
   if(Number.isFinite(contextVideo.duration)) V.duration=contextVideo.duration;
-  V.clipEnd=V.duration?Math.min(V.duration,V.center+10):V.center+10;
+  V.clipEnd=V.duration?Math.min(V.duration,V.center+V.contextSeconds):V.center+V.contextSeconds;
   if(V.clipEnd<=V.clipStart) V.clipEnd=V.clipStart+.01;
   target=Math.min(V.clipEnd,Math.max(V.clipStart,target));
   $('videoSeek').min=V.clipStart; $('videoSeek').max=V.clipEnd; $('videoSeek').value=target;
@@ -966,15 +1006,16 @@ async function seekContextVideo(target, autoplay){
 function positionContextVideo(index, autoplay){
   V.frameIndex=index;
   V.center=videoCenterAt(index);
-  V.clipStart=Math.max(0,V.center-10);
+  V.clipStart=Math.max(0,V.center-V.contextSeconds);
   const duration=V.duration||(Number.isFinite(contextVideo.duration)?contextVideo.duration:0);
-  V.clipEnd=duration?Math.min(duration,V.center+10):V.center+10;
+  V.clipEnd=duration?Math.min(duration,V.center+V.contextSeconds):V.center+V.contextSeconds;
   if(V.clipEnd<=V.clipStart) V.clipEnd=V.clipStart+.01;
   $('videoSeek').min=V.clipStart; $('videoSeek').max=V.clipEnd; $('videoSeek').value=V.clipStart;
   $('videoTitle').textContent=V.name||'Context video';
-  $('videoSubtitle').textContent=`${S.frames[index]||'frame'} | ${videoTime(V.center)} | -10s / +10s`;
+  $('videoSubtitle').textContent=`${S.frames[index]||'frame'} | ${videoTime(V.center)} | -${V.contextSeconds}s / +${V.contextSeconds}s`;
   updateVideoFrameMark();
   updateVideoControls();
+  if(CA.open){ refreshContextAnnotationMeta(); positionContextAnnotation(); }
   seekContextVideo(V.clipStart,autoplay);
 }
 function openContextVideo(index=S.idx, autoplay=true){
@@ -994,6 +1035,25 @@ function stepVideo(direction){
   const target=Math.min(V.clipEnd,Math.max(V.clipStart,(contextVideo.currentTime||V.center)+direction));
   seekContextVideo(target,false);
 }
+function setVideoLoop(value){
+  V.loop=!!value;
+  const button=$('videoLoop'); button.classList.toggle('on',V.loop); button.setAttribute('aria-pressed',String(V.loop));
+  button.title=V.loop?'Loop clip: on':'Loop clip';
+}
+function videoClipTimestamp(seconds){ return contextTimeShort(Math.max(0,seconds-V.clipStart)); }
+function showVideoSeekTimestamp(e){
+  if(!CA.open) return;
+  const seek=$('videoSeek'), rect=seek.getBoundingClientRect();
+  const ratio=Math.max(0,Math.min(1,(e.clientX-rect.left)/Math.max(1,rect.width)));
+  const seconds=V.clipStart+ratio*(V.clipEnd-V.clipStart), tip=$('videoSeekTimestamp');
+  tip.textContent=videoClipTimestamp(seconds); tip.dataset.timestamp=tip.textContent;
+  $('videoSeekWrap').style.setProperty('--seek-tip-pos',(ratio*100)+'%'); tip.classList.remove('hidden');
+}
+async function copyVideoSeekTimestamp(){
+  const value=$('videoSeekTimestamp').dataset.timestamp||$('videoSeekTimestamp').textContent;
+  try{ await navigator.clipboard.writeText(value); toast(`Copied timestamp ${value}`,'ok'); }
+  catch(_){ const t=document.createElement('textarea'); t.value=value; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); toast(`Copied timestamp ${value}`,'ok'); }
+}
 function timelineIndex(e){
   const slider=$('frameSlider'), rect=slider.getBoundingClientRect();
   const ratio=Math.max(0,Math.min(1,(e.clientX-rect.left)/Math.max(1,rect.width)));
@@ -1001,12 +1061,424 @@ function timelineIndex(e){
 }
 function showVideoTimelineTip(e){
   if(!V.available||!S.count) return;
-  const idx=timelineIndex(e), center=videoCenterAt(idx), start=Math.max(0,center-10);
-  const end=V.duration?Math.min(V.duration,center+10):center+10;
+  const idx=timelineIndex(e), center=videoCenterAt(idx), start=Math.max(0,center-V.contextSeconds);
+  const end=V.duration?Math.min(V.duration,center+V.contextSeconds):center+V.contextSeconds;
   const tip=$('videoTimelineTip');
   tip.innerHTML=`Frame ${frameIdAt(idx)} &nbsp; <strong>${videoTime(center)}</strong><br>${videoTime(start)} - ${videoTime(end)}`;
   tip.style.left=e.clientX+'px'; tip.style.top=(e.clientY-10)+'px'; tip.classList.remove('hidden');
 }
+
+// ---------- context annotation ----------
+const CONTEXT_TEXT_FIELDS=['Action','Intent','TissueState','FreeText','Smoke','Bleeding','Occlusion'];
+const CONTEXT_VIS_FIELDS=['Smoke','Bleeding','Occlusion'];
+const SURGICAL_ACTIONS=[
+  'aspirate','cauterize','clean','clip','coagulate','cut','dissect','divide','elevate','expose',
+  'extract','grasp','hold','incise','insert','irrigate','ligate','mobilize','pack','peel','place',
+  'probe','retract','seal','separate','staple','suction','suture','tie','transect','withdraw'
+];
+function contextEditor(name){ return $('context'+name); }
+function contextClassKind(name){
+  if(Object.prototype.hasOwnProperty.call(S.classGroups.instrument||{},name)) return 'instrument';
+  if(['Pancreas','Duodenal stump','Liver','Gallbladder','Stomach'].includes(name)) return 'organ';
+  if(/artery|vein|vessel|blood/i.test(name)) return 'vessel';
+  return 'tissue';
+}
+function contextVocabulary(editor){
+  const out=Object.keys(S.classMap).map(name=>({name,kind:contextClassKind(name)}));
+  for(const name of Object.values(V.workflow.phaseNames||{})) out.push({name,kind:'phase'});
+  if(editor&&editor.id==='contextAction') for(const name of SURGICAL_ACTIONS) out.push({name,kind:'action'});
+  return out.sort((a,b)=>{
+    if(editor&&editor.id==='contextAction'&&(a.kind==='action')!==(b.kind==='action')) return a.kind==='action'?-1:1;
+    return b.name.length-a.name.length||a.name.localeCompare(b.name);
+  });
+}
+function contextSelectionOffset(editor,node,offset){
+  const range=document.createRange(); range.selectNodeContents(editor); range.setEnd(node,offset);
+  return range.toString().length;
+}
+function contextSelectionSnapshot(){
+  const sel=window.getSelection(); if(!sel||!sel.rangeCount) return null;
+  const anchor=sel.anchorNode,focus=sel.focusNode;
+  const source=anchor?.nodeType===Node.ELEMENT_NODE?anchor:anchor?.parentElement;
+  const editor=source?.closest?.('.context-edit');
+  if(!editor||!editor.contains(focus)) return null;
+  return {field:editor.id.slice('context'.length),start:contextSelectionOffset(editor,anchor,sel.anchorOffset),end:contextSelectionOffset(editor,focus,sel.focusOffset)};
+}
+function contextSnapshot(){
+  const text={},html={};
+  for(const name of CONTEXT_TEXT_FIELDS){ const editor=contextEditor(name); text[name]=editor.innerText.replace(/\n+$/,''); html[name]=editor.innerHTML; }
+  const visibility={}; for(const name of CONTEXT_VIS_FIELDS) visibility[name]=$('context'+name+'Check').checked;
+  return {text,html,visibility,selection:contextSelectionSnapshot()};
+}
+function contextSnapshotKey(snap){ return JSON.stringify({text:snap.text,html:snap.html,visibility:snap.visibility}); }
+function setContextStatus(text, dirty=false){
+  CA.dirty=dirty; $('contextAnnotationStatus').textContent=text;
+  $('contextAnnotationStatus').classList.toggle('dirty',dirty);
+}
+function pushContextHistory(){
+  if(CA.restoring) return;
+  const snap=contextSnapshot(), last=CA.history[CA.history.length-1];
+  if(!last||contextSnapshotKey(last)!==contextSnapshotKey(snap)){
+    CA.history.push(snap); if(CA.history.length>5) CA.history.shift();
+  }
+  CA.future=[];
+}
+function contextSelectionPoint(editor,target){
+  const walker=document.createTreeWalker(editor,NodeFilter.SHOW_TEXT);
+  let node,remaining=Math.max(0,target||0),last=null;
+  while((node=walker.nextNode())){ last=node; if(remaining<=node.nodeValue.length) return [node,remaining]; remaining-=node.nodeValue.length; }
+  return last?[last,last.nodeValue.length]:[editor,editor.childNodes.length];
+}
+function restoreContextSelection(selection){
+  if(!selection||!selection.field) return;
+  const editor=contextEditor(selection.field); if(!editor) return;
+  const [node,offset]=contextSelectionPoint(editor,Math.max(selection.start||0,selection.end||0));
+  editor.focus();
+  const sel=window.getSelection();
+  if(sel.setBaseAndExtent) sel.setBaseAndExtent(node,offset,node,offset);
+  else{
+    const range=document.createRange(); range.setStart(node,offset); range.collapse(true);
+    sel.removeAllRanges(); sel.addRange(range);
+  }
+}
+function restoreContextSnapshot(snap){
+  if(!snap) return;
+  CA.restoring=true;
+  for(const name of CONTEXT_TEXT_FIELDS){ const editor=contextEditor(name); if(snap.html&&name in snap.html) editor.innerHTML=snap.html[name]; else editor.textContent=snap.text?.[name]||''; }
+  for(const name of CONTEXT_VIS_FIELDS) $('context'+name+'Check').checked=!!snap.visibility?.[name];
+  CA.restoring=false; hideContextSuggestions(); setContextStatus('edited',true); restoreContextSelection(snap.selection);
+}
+function contextUndo(){
+  if(!CA.history.length) return;
+  CA.future.push(contextSnapshot()); if(CA.future.length>5) CA.future.shift();
+  const snap=CA.history.pop(); restoreContextSnapshot(snap);
+}
+function contextRedo(){
+  if(!CA.future.length) return;
+  CA.history.push(contextSnapshot()); if(CA.history.length>5) CA.history.shift();
+  restoreContextSnapshot(CA.future.pop());
+}
+function contextTimeShort(seconds){
+  seconds=Math.max(0,Math.round(Number(seconds)||0));
+  const h=Math.floor(seconds/3600),m=Math.floor((seconds%3600)/60),s=seconds%60;
+  return h?`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+          :`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+function contextClipPhases(){
+  return ((V.workflow&&V.workflow.intervals)||[])
+    .filter(p=>p.end>V.clipStart&&p.start<V.clipEnd)
+    .map(p=>({
+      phase_id:p.phase_id,
+      phase_name:p.phase_name,
+      start:Number((Math.max(p.start,V.clipStart)-V.clipStart).toFixed(3)),
+      end:Number((Math.min(p.end,V.clipEnd)-V.clipStart).toFixed(3)),
+    }));
+}
+function refreshContextPhase(){
+  const box=$('contextPhase'), hits=contextClipPhases();
+  box.innerHTML=''; box.classList.toggle('muted',!hits.length);
+  if(!hits.length){ box.textContent=V.workflow?.available?'No phase assigned in this clip':'No workflow map found'; return; }
+  hits.forEach((p,i)=>{
+    if(i) box.append(document.createTextNode(', '));
+    const name=document.createElement('span'); name.className='ctx-phase'; name.textContent=p.phase_name;
+    box.append(name,document.createTextNode(` (${contextTimeShort(p.start)}-${contextTimeShort(p.end)})`));
+  });
+}
+function contextAppearFromEditor(){
+  return S.order.map(id=>S.objects.get(id)).filter(o=>o&&o.visible&&o.bin&&o.bin.some(v=>v))
+    .map(o=>({object_id:o.id,class_id:o.classId,name:o.name||classNameForId(o.classId),kind:contextClassKind(classNameForId(o.classId))}));
+}
+function renderContextAppear(items){
+  const groups={instrument:[],organ:[],vessel:[],tissue:[]};
+  for(const item of (items||[])){
+    const base=item.name||classNameForId(item.class_id), kind=item.kind||contextClassKind(base);
+    groups[kind].push(base);
+  }
+  const labels={instrument:'Instruments',organ:'Organs',vessel:'Vessels',tissue:'Tissues'}, box=$('contextAppear');
+  box.innerHTML=''; let any=false;
+  for(const kind of ['instrument','organ','vessel','tissue']){
+    if(!groups[kind].length) continue; any=true;
+    if(box.childNodes.length) box.append(document.createElement('br'));
+    const lead=document.createElement('strong'); lead.textContent=labels[kind]+': ';
+    box.append(lead);
+    groups[kind].forEach((name,i)=>{
+      if(i) box.append(document.createTextNode(', '));
+      const token=document.createElement('span'); token.className=`ctx-name ctx-${kind}`; token.textContent=name; box.append(token);
+    });
+  }
+  box.classList.toggle('muted',!any); if(!any) box.textContent='No current GT classes';
+}
+async function refreshContextAppear(){
+  if(!CA.open) return;
+  const frame=S.idx, token=++CA.appearToken;
+  const fallback=contextAppearFromEditor();
+  const box=$('contextAppear');
+  if(!CA.appear.length || CA.appearFrame!==frame){ box.textContent='Loading GT classes...'; box.classList.add('muted'); }
+  try{
+    const {ok,j}=await API.post('/api/context/appear',{frame_idx:frame});
+    if(token!==CA.appearToken||!CA.open||frame!==S.idx) return;
+    const remote=ok&&j.available ? (j.objects||[]).map(o=>({...o,kind:contextClassKind(o.name||classNameForId(o.class_id))})) : null;
+    CA.appear=remote===null ? fallback : remote;
+    CA.appearFrame=frame;
+  }catch(_){
+    if(token!==CA.appearToken||!CA.open||frame!==S.idx) return;
+    CA.appear=fallback; CA.appearFrame=frame;
+  }
+  renderContextAppear(CA.appear);
+}
+function refreshContextAnnotationMeta(){
+  if(!CA.open) return;
+  $('contextFrameId').textContent=S.frames[S.idx]||'-';
+  $('contextTimeRange').textContent=`${videoTime(V.clipStart)}-${videoTime(V.clipEnd)}`;
+  $('contextFps').textContent=V.fps?V.fps.toFixed(3):'-';
+  refreshContextPhase(); refreshContextAppear();
+}
+function clearContextForm(){
+  CA.restoring=true;
+  for(const name of CONTEXT_TEXT_FIELDS) contextEditor(name).textContent='';
+  for(const name of CONTEXT_VIS_FIELDS) $('context'+name+'Check').checked=false;
+  CA.restoring=false; CA.history=[]; CA.future=[]; setContextStatus('not saved',false);
+}
+function contextDefaultDir(){ return CA.defaultDir||S.defaultPath||''; }
+function updateContextPath(){
+  const path=CA.saveDir||CA.importDir;
+  $('contextAnnotationPath').textContent=path||'No context folder selected';
+  $('contextAnnotationPath').title=path||'';
+}
+function releaseContextDockedVideo(){
+  const saved=CA.dockedVideoRect;
+  if(!saved) return;
+  const win=$('videoWindow');
+  if(V.mode==='float'){
+    Object.assign(win.style,{left:saved.left+'px',top:saved.top+'px',right:'auto',
+      width:saved.width+'px',height:saved.height+'px'});
+  }else clearDockedVideoGeometry();
+  CA.dockedVideoRect=null;
+}
+function positionContextAnnotation(){
+  if(!CA.open) return;
+  const panel=$('contextAnnotationPanel');
+  panel.classList.toggle('split-context',V.mode==='split');
+  if(CA.mode==='dock'&&V.mode==='split'){
+    const viewport=$('viewport').getBoundingClientRect();
+    const w=Math.round(viewport.width*.9),h=Math.round(viewport.height*.9);
+    Object.assign(panel.style,{left:(viewport.left+(viewport.width-w)/2)+'px',top:(viewport.top+(viewport.height-h)/2)+'px',
+      width:w+'px',height:h+'px'});
+    return;
+  }
+  if(CA.mode==='float'&&CA.floatRect){
+    const w=Math.min(CA.floatRect.width,window.innerWidth-16),h=Math.min(CA.floatRect.height,window.innerHeight-70);
+    Object.assign(panel.style,{left:clampi(CA.floatRect.left,8,window.innerWidth-w-8)+'px',top:clampi(CA.floatRect.top,58,window.innerHeight-h-8)+'px',width:w+'px',height:h+'px'});
+    return;
+  }
+  if(CA.mode==='dock'&&V.mode==='float'&&window.innerWidth>=960){
+    const win=$('videoWindow'), vr=win.getBoundingClientRect();
+    if(!CA.dockedVideoRect) CA.dockedVideoRect={left:vr.left,top:vr.top,width:vr.width,height:vr.height};
+    const margin=8,gap=8,available=window.innerWidth-margin*2-gap;
+    const panelWidth=Math.min(680,Math.max(520,Math.round(available*.5)));
+    const videoWidth=available-panelWidth;
+    const top=clampi(CA.dockedVideoRect.top,58,window.innerHeight-220);
+    const panelHeight=Math.min(Math.max(430,panel.getBoundingClientRect().height||560),window.innerHeight-top-8);
+    Object.assign(win.style,{left:margin+'px',top:top+'px',right:'auto',width:videoWidth+'px',height:CA.dockedVideoRect.height+'px'});
+    Object.assign(panel.style,{left:(margin+videoWidth+gap)+'px',top:top+'px',width:panelWidth+'px',height:panelHeight+'px'});
+    return;
+  }
+  const vr=$('videoWindow').getBoundingClientRect(), pr=panel.getBoundingClientRect();
+  const w=Math.min(Math.max(520,pr.width||680),window.innerWidth-16), h=Math.min(Math.max(430,pr.height||560),window.innerHeight-66);
+  let left=vr.right+8;
+  if(left+w>window.innerWidth-8) left=vr.left-w-8;
+  if(left<8) left=clampi(vr.right-w,8,window.innerWidth-w-8);
+  Object.assign(panel.style,{left:left+'px',top:clampi(vr.top,58,window.innerHeight-h-8)+'px',width:w+'px',height:h+'px'});
+}
+function setContextMode(mode){
+  if(!['dock','float'].includes(mode)) mode='dock';
+  const panel=$('contextAnnotationPanel');
+  if(CA.mode==='float'){
+    const r=panel.getBoundingClientRect(); CA.floatRect={left:r.left,top:r.top,width:r.width,height:r.height};
+  }
+  if(mode==='float') releaseContextDockedVideo();
+  CA.mode=mode; panel.classList.toggle('mode-float',mode==='float'); panel.classList.toggle('mode-dock',mode==='dock');
+  try{ localStorage.setItem('issas.contextMode',mode); }catch(_){}
+  $('contextModeDock').classList.toggle('on',mode==='dock'); $('contextModeFloat').classList.toggle('on',mode==='float');
+  requestAnimationFrame(positionContextAnnotation);
+}
+function openContextAnnotation(){
+  if(!V.open){ toast('Open the context video first','err'); return; }
+  CA.open=true; CA.activeFrame=S.idx; $('contextAnnotationPanel').classList.remove('hidden');
+  const draft=CA.drafts.get(S.idx); if(draft){ restoreContextSnapshot(draft.snapshot); setContextStatus(draft.dirty?'edited':'draft',draft.dirty); }
+  refreshContextAnnotationMeta(); updateContextPath(); setContextMode(V.mode==='split'?'dock':CA.mode);
+}
+function closeContextAnnotation(){
+  if(CA.mode==='float'){
+    const r=$('contextAnnotationPanel').getBoundingClientRect(); CA.floatRect={left:r.left,top:r.top,width:r.width,height:r.height};
+  }
+  releaseContextDockedVideo();
+  CA.open=false; CA.appearToken++; hideContextSuggestions(); $('videoSeekTimestamp').classList.add('hidden'); $('contextAnnotationPanel').classList.add('hidden');
+}
+function contextPayload(){
+  const snap=contextSnapshot();
+  return {video:V.name,frame_id:S.frames[S.idx]||'',fps:V.fps,
+    clip:{start:V.clipStart,end:V.clipEnd,center:V.center,context_seconds:V.contextSeconds},
+    phases:contextClipPhases(),
+    appear:(CA.appearFrame===S.idx?CA.appear:contextAppearFromEditor()),
+    annotation:{action:snap.text.Action,intent:snap.text.Intent,tissue_state:snap.text.TissueState,
+      free_text:snap.text.FreeText,visibility:{smoke:{checked:snap.visibility.Smoke,text:snap.text.Smoke},
+      bleeding:{checked:snap.visibility.Bleeding,text:snap.text.Bleeding},occlusion:{checked:snap.visibility.Occlusion,text:snap.text.Occlusion}}}};
+}
+function contextStorageKey(kind){ return `issas.context${kind==='save'?'Save':'Import'}Dir:${CA.caseRoot||CA.defaultDir||''}`; }
+function chooseContextDir(kind,runAfter,startOverride){
+  openBrowser({title:kind==='save'?'Choose context output folder':'Choose context import folder',onSelect:p=>{
+    if(!p) return;
+    if(kind==='save'){ CA.saveDir=p; try{localStorage.setItem(contextStorageKey('save'),p);}catch(_){} }
+    else { CA.importDir=p; try{localStorage.setItem(contextStorageKey('import'),p);}catch(_){} }
+    updateContextPath(); if(runAfter) runAfter();
+  },start:startOverride||(kind==='save'?CA.saveDir:CA.importDir)||contextDefaultDir()});
+}
+async function saveContextAnnotation(){
+  if(!CA.open) return;
+  if(CA.appearFrame!==S.idx) await refreshContextAppear();
+  if(!CA.saveDir){
+    const {ok,j}=await API.post('/api/context/default-directory',{});
+    if(!ok){ toast(j.detail||'Could not create the context folder','err'); return; }
+    CA.defaultDir=j.path; chooseContextDir('save',saveContextAnnotation,j.path); return;
+  }
+  const {ok,j}=await API.post('/api/context/save',{frame_idx:S.idx,directory:CA.saveDir,data:contextPayload()});
+  if(!ok){ toast(j.detail||'Context save failed','err'); return; }
+  setContextStatus('saved',false); CA.drafts.set(S.idx,{snapshot:contextSnapshot(),dirty:false}); updateContextPath(); flashScreen(); toast(`Context saved: ${S.frames[S.idx]}`,'ok');
+}
+function applyImportedContext(data){
+  const ann=data?.annotation||{}, vis=ann.visibility||{};
+  const values={Action:ann.action,Intent:ann.intent,TissueState:ann.tissue_state,FreeText:ann.free_text,
+    Smoke:vis.smoke?.text,Bleeding:vis.bleeding?.text,Occlusion:vis.occlusion?.text};
+  CA.restoring=true;
+  for(const name of CONTEXT_TEXT_FIELDS) contextEditor(name).textContent=values[name]||'';
+  for(const name of CONTEXT_VIS_FIELDS) $('context'+name+'Check').checked=!!vis[name.toLowerCase()]?.checked;
+  CA.restoring=false; CA.history=[]; CA.future=[]; setContextStatus('imported',false);
+}
+async function importContextAnnotation(){
+  if(!CA.open) return;
+  if(!CA.importDir){ chooseContextDir('import',importContextAnnotation); return; }
+  const {ok,j}=await API.post('/api/context/import',{dir:CA.importDir,frame_idx:S.idx});
+  if(!ok){ toast(j.detail||'Context import failed','err'); return; }
+  applyImportedContext(j.data); updateContextPath(); toast(`Context imported: ${S.frames[S.idx]}`,'ok');
+}
+function contextWordAtCaret(editor){
+  const sel=window.getSelection(); if(!sel||!sel.rangeCount||!editor.contains(sel.anchorNode)) return null;
+  const range=sel.getRangeAt(0), node=sel.anchorNode;
+  if(node.nodeType!==Node.TEXT_NODE) return {query:'',range};
+  const before=node.data.slice(0,sel.anchorOffset), starts=[0];
+  for(let i=0;i<before.length;i++) if(/[\s,.;:()]/.test(before[i])) starts.push(i+1);
+  const vocab=contextVocabulary(editor), matches=[];
+  for(const start of starts){ const query=before.slice(start).trimStart(); if(query.length<2) continue;
+    if(vocab.some(item=>item.name.toLowerCase().startsWith(query.toLowerCase()))) matches.push({start:sel.anchorOffset-query.length,query}); }
+  if(!matches.length) return null;
+  const best=matches.sort((a,b)=>b.query.length-a.query.length)[0], replace=document.createRange();
+  replace.setStart(node,best.start); replace.setEnd(node,sel.anchorOffset);
+  return {query:best.query,range:replace};
+}
+function hideContextSuggestions(){ $('contextSuggest').classList.add('hidden'); CA.suggestions=[]; }
+function showContextSuggestions(editor){
+  CA.activeEditor=editor; const word=contextWordAtCaret(editor);
+  if(!word||word.query.length<2){ hideContextSuggestions(); return; }
+  const q=word.query.toLowerCase().trim();
+  CA.suggestions=contextVocabulary(editor).filter(x=>x.name.toLowerCase().includes(q)).slice(0,8);
+  if(!CA.suggestions.length){ hideContextSuggestions(); return; }
+  CA.suggestionIndex=0; const box=$('contextSuggest'); box.innerHTML='';
+  CA.suggestions.forEach((item,i)=>{ const b=document.createElement('button'); b.type='button';
+    b.className=(i===0?'active ':'')+`ctx-name ctx-${item.kind}`; b.textContent=item.name;
+    b.addEventListener('mousedown',e=>{e.preventDefault();completeContextSuggestion(i);}); box.appendChild(b); });
+  const r=editor.getBoundingClientRect(); box.style.left=clampi(r.left,8,window.innerWidth-Math.min(360,window.innerWidth*.42)-8)+'px';
+  box.style.top=Math.min(window.innerHeight-180,r.bottom+4)+'px'; box.classList.remove('hidden');
+}
+function completeContextSuggestion(index=CA.suggestionIndex,trigger='Tab'){
+  const item=CA.suggestions[index], editor=CA.activeEditor, word=editor&&contextWordAtCaret(editor); if(!item||!word) return;
+  pushContextHistory(); const token=document.createElement('span'); token.className=`ctx-name ctx-${item.kind}`; token.textContent=item.name;
+  token.dataset.term=item.name;
+  word.range.deleteContents(); word.range.insertNode(token);
+  const sel=window.getSelection(), range=document.createRange();
+  if(item.kind==='action'&&trigger!==' '){
+    range.selectNodeContents(token); range.collapse(false);
+  }else{
+    const space=document.createTextNode(' '); token.after(space); range.setStart(space,1); range.collapse(true);
+  }
+  sel.removeAllRanges(); sel.addRange(range);
+  hideContextSuggestions(); setContextStatus('edited',true); editor.focus();
+}
+
+function contextActionForms(base){
+  const forms=new Set([base,base+'s',base+'ed',base+'ing']);
+  if(/e$/i.test(base)){ forms.add(base+'d'); forms.add(base.slice(0,-1)+'ing'); }
+  if(/[^aeiou][aeiou][^aeiouwxy]$/i.test(base)){ const last=base.slice(-1); forms.add(base+last+'ed'); forms.add(base+last+'ing'); }
+  if(/y$/i.test(base)){ forms.add(base.slice(0,-1)+'ies'); forms.add(base.slice(0,-1)+'ied'); }
+  return [...forms];
+}
+function contextStyledPrefix(span){
+  const text=span.textContent||'';
+  let base=span.dataset.term||'';
+  if(!base){
+    const kind=[...span.classList].find(x=>x.startsWith('ctx-')&&x!=='ctx-name')?.slice(4);
+    base=contextVocabulary(span.closest('.context-edit')).filter(x=>x.kind===kind&&text.toLowerCase().startsWith(x.name.toLowerCase()))
+      .sort((a,b)=>b.name.length-a.name.length)[0]?.name||text;
+    span.dataset.term=base;
+  }
+  if(!span.classList.contains('ctx-action')) return Math.min(base.length,text.length);
+  const forms=contextActionForms(base), lower=text.toLowerCase();
+  if(forms.some(form=>form.toLowerCase().startsWith(lower))) return text.length;
+  return forms.filter(form=>lower.startsWith(form.toLowerCase())).sort((a,b)=>b.length-a.length)[0]?.length||Math.min(base.length,text.length);
+}
+function normalizeContextTokens(editor){
+  const sel=window.getSelection();
+  // contenteditable may synthesize <b>/<u> wrappers when typing at the edge of
+  // a styled token. The panel has no free-form formatting, so remove those
+  // wrappers and keep formatting exclusively on our semantic token spans.
+  for(const wrapper of editor.querySelectorAll('b,u,strong,font')) wrapper.replaceWith(...wrapper.childNodes);
+  for(const span of editor.querySelectorAll('.ctx-name')){
+    const keep=contextStyledPrefix(span), text=span.textContent||'';
+    if(keep>=text.length) continue;
+    const overflow=text.slice(keep), plain=document.createTextNode(overflow), anchor=sel?.anchorNode, offset=sel?.anchorOffset||0;
+    const anchorInside=!!(anchor&&span.contains(anchor));
+    span.textContent=text.slice(0,keep); span.after(plain);
+    if(sel&&anchorInside){
+      const range=document.createRange(); range.setStart(plain,Math.max(0,Math.min(overflow.length,offset-keep))); range.collapse(true);
+      sel.removeAllRanges(); sel.addRange(range);
+    }
+  }
+}
+
+CONTEXT_TEXT_FIELDS.forEach(name=>{
+  const editor=contextEditor(name);
+  editor.addEventListener('beforeinput',pushContextHistory);
+  editor.addEventListener('input',()=>{ if(!CA.restoring){ normalizeContextTokens(editor); setContextStatus('edited',true); showContextSuggestions(editor); } });
+  editor.addEventListener('keydown',e=>{
+    if(!$('contextSuggest').classList.contains('hidden')){
+      if(e.key==='ArrowDown'||e.key==='ArrowUp'){ e.preventDefault(); CA.suggestionIndex=(CA.suggestionIndex+(e.key==='ArrowDown'?1:-1)+CA.suggestions.length)%CA.suggestions.length;
+        [...$('contextSuggest').children].forEach((b,i)=>b.classList.toggle('active',i===CA.suggestionIndex)); return; }
+      if(e.key==='Tab'||e.key===' '||e.key==='Enter'){ e.preventDefault(); completeContextSuggestion(CA.suggestionIndex,e.key); return; }
+      if(e.key==='Escape'){ e.preventDefault(); hideContextSuggestions(); }
+    }
+  });
+});
+CONTEXT_VIS_FIELDS.forEach(name=>$('context'+name+'Check').addEventListener('change',()=>{pushContextHistory();setContextStatus('edited',true);contextEditor(name).focus();}));
+$('contextAnnotationOpen').addEventListener('click',openContextAnnotation);
+$('contextAnnotationClose').addEventListener('click',closeContextAnnotation);
+$('contextModeDock').addEventListener('click',()=>setContextMode('dock'));
+$('contextModeFloat').addEventListener('click',()=>setContextMode('float'));
+$('contextSave').addEventListener('click',saveContextAnnotation);
+$('contextImport').addEventListener('click',importContextAnnotation);
+$('contextImportDir').addEventListener('click',()=>chooseContextDir('import'));
+window.addEventListener('resize',positionContextAnnotation);
+if(window.ResizeObserver) new ResizeObserver(()=>{ if(CA.open&&CA.mode==='float'){
+  const r=$('contextAnnotationPanel').getBoundingClientRect(); CA.floatRect={left:r.left,top:r.top,width:r.width,height:r.height};
+}}).observe($('contextAnnotationPanel'));
+
+$('contextAnnotationDrag').addEventListener('pointerdown',e=>{
+  if(e.button!==0||e.target.closest('button')) return;
+  if(CA.mode==='dock') setContextMode('float');
+  const panel=$('contextAnnotationPanel'),r=panel.getBoundingClientRect(),dx=e.clientX-r.left,dy=e.clientY-r.top,id=e.pointerId;
+  const move=ev=>{ const w=panel.offsetWidth,h=panel.offsetHeight; panel.style.left=clampi(ev.clientX-dx,8,window.innerWidth-w-8)+'px'; panel.style.top=clampi(ev.clientY-dy,58,window.innerHeight-h-8)+'px'; };
+  const up=()=>{ panel.releasePointerCapture?.(id); panel.removeEventListener('pointermove',move); panel.removeEventListener('pointerup',up); const q=panel.getBoundingClientRect(); CA.floatRect={left:q.left,top:q.top,width:q.width,height:q.height}; };
+  panel.setPointerCapture(id); panel.addEventListener('pointermove',move); panel.addEventListener('pointerup',up);
+});
 
 // ============================ EVENTS ============================
 let lastMouse=null;
@@ -1029,6 +1501,7 @@ async function loadFolderIntoEditor(path){
   $('modeBadge').className = 'badge '+(S.sam2?'badge-live':'badge-sim');
   $('frameSlider').max=S.count-1;
   S.objects.clear(); S.order=[]; S.currentId=null; S.frameMasks.clear(); S.rawMasks.clear();
+  CA.drafts.clear(); CA.activeFrame=null; clearContextForm();
   saveConfigured=false; S.dirty=false; pendingFrame=null; S.refineSrc=null;
   // import folders are per-case: unbind them so the new case asks once instead of
   // silently importing the previous case's masks (frame numbering repeats across cases)
@@ -1045,6 +1518,12 @@ function setDefaultExportDirs(imagesPath){
   const parent=imagesPath.replace(/\/+$/,'').replace(/\/[^\/]*$/,'');
   $('pngDir').value=parent+'/masks';
   $('yoloDir').value=parent+'/labels';
+  CA.caseRoot=parent; CA.defaultDir=parent+'/context'; CA.saveDir=null; CA.importDir=null;
+  try{
+    CA.saveDir=localStorage.getItem(contextStorageKey('save'))||null;
+    CA.importDir=localStorage.getItem(contextStorageKey('import'))||null;
+  }catch(_){}
+  updateContextPath();
 }
 
 // -- canvas mouse --
@@ -2030,15 +2509,21 @@ $('videoBrowse').addEventListener('click',()=>openBrowser({title:'Choose context
 $('videoClose').addEventListener('click',closeContextVideo);
 $('videoPlayPause').addEventListener('click',toggleVideoPlay);
 $('videoReplay').addEventListener('click',()=>seekContextVideo(V.clipStart,true));
+$('videoLoop').addEventListener('click',()=>setVideoLoop(!V.loop));
 $('videoPrevFrame').addEventListener('click',()=>stepVideo(-1));
 $('videoNextFrame').addEventListener('click',()=>stepVideo(1));
 $('videoCenter').addEventListener('click',()=>seekContextVideo(V.center,false));
 $('videoSeek').addEventListener('input',e=>{ contextVideo.pause(); contextVideo.currentTime=Number(e.target.value); updateVideoControls(); });
+$('videoSeek').addEventListener('pointerdown',showVideoSeekTimestamp);
+$('videoSeek').addEventListener('click',showVideoSeekTimestamp);
+$('videoSeekTimestamp').addEventListener('click',copyVideoSeekTimestamp);
 $('videoSpeed').addEventListener('change',e=>setVideoPlaybackRate(e.target.value));
+$('videoContext10').addEventListener('click',()=>setVideoContextSeconds(10,true,true));
+$('videoContext30').addEventListener('click',()=>setVideoContextSeconds(30,true,true));
 contextVideo.addEventListener('click',toggleVideoPlay);
 contextVideo.addEventListener('loadedmetadata',()=>{
   setVideoPlaybackRate(V.playbackRate,false);
-  if(Number.isFinite(contextVideo.duration)){ V.duration=contextVideo.duration; V.clipEnd=Math.min(V.duration,V.center+10); $('videoSeek').max=V.clipEnd; }
+  if(Number.isFinite(contextVideo.duration)){ V.duration=contextVideo.duration; V.clipEnd=Math.min(V.duration,V.center+V.contextSeconds); $('videoSeek').max=V.clipEnd; }
   updateVideoFrameMark();
   if(!V.seekPending) $('videoLoading').classList.add('hidden');
   updateVideoControls();
@@ -2048,7 +2533,10 @@ contextVideo.addEventListener('waiting',()=>$('videoLoading').classList.remove('
 contextVideo.addEventListener('playing',()=>{ if(!V.seekPending) $('videoLoading').classList.add('hidden'); updateVideoControls(); });
 contextVideo.addEventListener('pause',updateVideoControls);
 contextVideo.addEventListener('timeupdate',()=>{
-  if(contextVideo.currentTime>=V.clipEnd-.02 && !contextVideo.paused){ contextVideo.pause(); contextVideo.currentTime=V.clipEnd; }
+  if(contextVideo.currentTime>=V.clipEnd-.02 && !contextVideo.paused && !V.seekPending){
+    if(V.loop) seekContextVideo(V.clipStart,true);
+    else { contextVideo.pause(); contextVideo.currentTime=V.clipEnd; }
+  }
   updateVideoControls();
 });
 contextVideo.addEventListener('error',()=>{ $('videoLoading').classList.add('hidden'); toast('The context video could not be decoded','err'); });
@@ -2081,6 +2569,7 @@ $('videoDragHandle').addEventListener('pointerdown',e=>{
     const x=Math.max(0,Math.min(window.innerWidth-win.offsetWidth,ev.clientX-dx));
     const y=Math.max(54,Math.min(window.innerHeight-win.offsetHeight,ev.clientY-dy));
     win.style.left=x+'px'; win.style.top=y+'px'; win.style.right='auto';
+    if(CA.open&&CA.mode==='dock') positionContextAnnotation();
   };
   handle.classList.add('dragging');
   handle.setPointerCapture(pointerId);
@@ -2124,6 +2613,18 @@ window.addEventListener('keydown',(e)=>{
   // fullscreen first: it must work even while a path field has focus, and the
   // browser's own Ctrl+F find bar is useless in this tool
   if((e.ctrlKey||e.metaKey) && (e.key==='f'||e.key==='F')){ e.preventDefault(); toggleFullscreen(); return; }
+  if(CA.open){
+    const key=e.key.toLowerCase();
+    const contextTyping=!!document.activeElement.closest?.('.context-edit');
+    if((e.ctrlKey||e.metaKey)&&key==='s'){ e.preventDefault(); saveContextAnnotation(); return; }
+    if((e.ctrlKey||e.metaKey)&&key==='z'){ e.preventDefault(); contextUndo(); return; }
+    if((e.ctrlKey||e.metaKey)&&key==='y'){ e.preventDefault(); contextRedo(); return; }
+    if(contextTyping) return;
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&key==='q'){ e.preventDefault(); importContextAnnotation(); return; }
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&key==='o'){ e.preventDefault(); closeContextAnnotation(); return; }
+  } else if(V.open&&!(e.ctrlKey||e.metaKey||e.altKey)&&e.key.toLowerCase()==='o'){
+    e.preventDefault(); openContextAnnotation(); return;
+  }
   if(e.code==='Space'){ S.spaceDown=true; if(!S.brushing&&!S.dragBox) canvas.style.cursor='grab'; }
   const tag=document.activeElement.tagName;
   if(tag==='INPUT'||tag==='TEXTAREA') return;
@@ -2151,7 +2652,7 @@ window.addEventListener('keydown',(e)=>{
     case 'b': $('brushBtn').click(); break;
     case 't': { const o=S.objects.get(S.currentId); if(o){o.visible=!o.visible; rebuildObjList(); render();} break; }
     case 'y': S.vis.all=!S.vis.all; render(); break;
-    case 'p': reseedFromHere(); break;
+    case 'p': openContextVideo(S.idx,true); break;
     case '[': togglePanel('left'); break;
     case ']': togglePanel('right'); break;
     case '\\': togglePanel('bottom'); break;

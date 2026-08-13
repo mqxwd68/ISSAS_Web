@@ -28,6 +28,8 @@ import re
 import struct
 import subprocess
 import traceback
+import ast
+from datetime import datetime, timezone
 from email.utils import formatdate
 
 import numpy as np
@@ -37,7 +39,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PNG2YOLO = os.path.join(SCRIPT_DIR, "A000_generate_yolo_from_png.py")
@@ -340,11 +342,63 @@ def _video_status():
                 "directory": SESSION.video_dir_display or SESSION.video_dir, "case": case,
                 "expected": f"{case}.mp4" if case else None}
     probe = _probe_video(path)
+    workflow = _load_workflow_map(os.path.dirname(path), case)
     return {"configured": True, "available": True,
             "directory": SESSION.video_dir_display or SESSION.video_dir,
             "case": case, "name": os.path.basename(path), "fps": probe["fps"],
             "fps_source": probe["fps_source"],
-            "duration": probe["duration"], "width": probe["width"], "height": probe["height"]}
+            "duration": probe["duration"], "width": probe["width"], "height": probe["height"],
+            "workflow": workflow}
+
+
+def _workflow_seconds(value: str) -> float:
+    parts = [int(part) for part in value.strip().split(":")]
+    if len(parts) == 2:
+        return float(parts[0] * 60 + parts[1])
+    if len(parts) == 3:
+        return float(parts[0] * 3600 + parts[1] * 60 + parts[2])
+    raise ValueError(f"Invalid workflow time: {value}")
+
+
+def _load_workflow_map(directory: str, case: Optional[str]) -> dict:
+    """Parse PHASE_DESC/WORKFLOW_MAP assignments without executing the text file."""
+    path = os.path.join(directory, "workflow_map.txt")
+    empty = {"available": False, "path": path, "phase_names": {}, "intervals": []}
+    if not case or not os.path.isfile(path):
+        return empty
+    try:
+        source = open(path, "r", encoding="utf-8-sig").read()
+        tree = ast.parse(source, filename=path)
+        values = {}
+        for node in tree.body:
+            if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+                continue
+            target = node.targets[0]
+            if isinstance(target, ast.Name) and target.id in {"PHASE_DESC", "WORKFLOW_MAP"}:
+                values[target.id] = ast.literal_eval(node.value)
+        phase_names = {str(int(k)): str(v) for k, v in (values.get("PHASE_DESC") or {}).items()}
+        raw_intervals = (values.get("WORKFLOW_MAP") or {}).get(case, [])
+        intervals = []
+        pattern = re.compile(r"^(.+?)-(.+?)-(\d+)$")
+        for raw in raw_intervals:
+            match = pattern.match(str(raw).strip())
+            if not match:
+                continue
+            start_text, end_text, phase_id = match.groups()
+            start, end = _workflow_seconds(start_text), _workflow_seconds(end_text)
+            if end <= start:
+                continue
+            intervals.append({
+                "phase_id": int(phase_id),
+                "phase_name": phase_names.get(phase_id, f"Phase {phase_id}"),
+                "start": start,
+                "end": end,
+            })
+        intervals.sort(key=lambda item: (item["start"], item["end"]))
+        return {"available": True, "path": path, "phase_names": phase_names,
+                "intervals": intervals}
+    except (OSError, SyntaxError, ValueError, TypeError) as exc:
+        return {**empty, "error": str(exc)}
 
 
 # --------------------------------------------------------------------------- #
@@ -674,6 +728,16 @@ class SaveReq(BaseModel):
     yolo: bool = True          # when False, write only the lossless palette PNG
     raw_objects: List[SaveObj] = []   # SAM2's raw masks for this frame (saved to sam_dir)
     sam_dir: str = ""
+
+
+class ContextSaveReq(BaseModel):
+    frame_idx: int
+    directory: str
+    data: Dict[str, Any]
+
+
+class ContextAppearReq(BaseModel):
+    frame_idx: int = 0
 
 
 class ReseedObj(BaseModel):
@@ -1608,6 +1672,55 @@ def import_mask_default_dir():
     return {"dir": frame_dir, "found": False}
 
 
+@app.post("/api/context/appear")
+def context_appear(req: ContextAppearReq):
+    """Return the current frame's GT class list without importing masks into the editor."""
+    if SESSION.frame_dir is None:
+        raise HTTPException(400, "No folder open")
+    if req.frame_idx < 0 or req.frame_idx >= len(SESSION.frame_names):
+        raise HTTPException(400, "Invalid frame index")
+
+    frame_dir = os.path.abspath(_norm(SESSION.frame_dir))
+    leaf = os.path.basename(os.path.normpath(frame_dir)).lower()
+    image_names = {"images", "image", "imgs", "frames", "frame", "jpeg", "jpg", "png"}
+    case_dir = os.path.dirname(frame_dir) if leaf in image_names else frame_dir
+    masks_dir = os.path.join(case_dir, "masks")
+    if not os.path.isdir(masks_dir):
+        return {"available": False, "objects": []}
+
+    base = os.path.splitext(SESSION.frame_names[req.frame_idx])[0]
+    png_path = os.path.join(masks_dir, f"{base}.png")
+    txt_path = os.path.join(masks_dir, f"{base}.txt")
+    class_ids = set()
+    source = None
+    if os.path.isfile(txt_path):
+        source = txt_path
+        with open(txt_path, encoding="utf-8") as f:
+            for line in f:
+                parts = line.split()
+                if not parts:
+                    continue
+                try:
+                    class_ids.add(int(parts[0]))
+                except (TypeError, ValueError):
+                    continue
+    elif os.path.isfile(png_path):
+        source = png_path
+        with Image.open(png_path) as im:
+            for value in np.unique(np.asarray(im)):
+                if int(value) > 0:
+                    class_ids.add(int(value))
+    else:
+        return {"available": False, "objects": []}
+
+    objects = [{
+        "class_id": cid,
+        "obj_id": cid,
+        "name": _class_name_for_id(cid),
+    } for cid in sorted(class_ids)]
+    return {"available": True, "source": source, "objects": objects}
+
+
 @app.post("/api/import_mask")
 def import_mask(req: ImportDirReq):
     """Find <basename>.png or <basename>.txt in `dir` and parse into objects+masks."""
@@ -1730,6 +1843,61 @@ def import_prompts(req: ImportDirReq):
 
     pending = {str(k): to_boxes(v) for k, v in per_frame.items() if k != req.frame_idx}
     return {"current": masks_out, "pending_frames": sorted(int(k) for k in pending.keys())}
+
+
+def _context_json_path(directory: str, frame_idx: int) -> str:
+    if SESSION.frame_dir is None:
+        raise HTTPException(400, "No folder open")
+    if frame_idx < 0 or frame_idx >= len(SESSION.frame_names):
+        raise HTTPException(400, "Invalid frame index")
+    directory = _norm(directory)
+    base = os.path.splitext(os.path.basename(SESSION.frame_names[frame_idx]))[0]
+    return os.path.join(directory, f"{base}.json")
+
+
+@app.post("/api/context/default-directory")
+def context_default_directory():
+    """Create and return <current case>/context using native path handling."""
+    if SESSION.frame_dir is None:
+        raise HTTPException(400, "No folder open")
+    frame_dir = os.path.abspath(_norm(SESSION.frame_dir))
+    case_dir = os.path.dirname(frame_dir.rstrip(os.sep))
+    path = os.path.join(case_dir, "context")
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as exc:
+        raise HTTPException(400, f"Could not create context folder: {exc}")
+    return {"path": path, "case_dir": case_dir}
+
+
+@app.post("/api/context/save")
+def context_save(req: ContextSaveReq):
+    path = _context_json_path(req.directory, req.frame_idx)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    payload = dict(req.data)
+    payload["schema_version"] = 1
+    payload["frame_id"] = SESSION.frame_names[req.frame_idx]
+    payload["frame_index"] = req.frame_idx
+    payload["case"] = _case_name(SESSION.frame_dir)
+    payload["saved_at"] = datetime.now(timezone.utc).isoformat()
+    with open(path, "w", encoding="utf-8") as target:
+        json.dump(payload, target, ensure_ascii=False, indent=2)
+    return {"path": path}
+
+
+@app.post("/api/context/import")
+def context_import(req: ImportDirReq):
+    path = _context_json_path(req.dir, req.frame_idx)
+    if not os.path.isfile(path):
+        raise HTTPException(404, f"Context JSON not found: {path}")
+    try:
+        with open(path, "r", encoding="utf-8-sig") as source:
+            data = json.load(source)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, f"Could not read context JSON: {exc}")
+    if not isinstance(data, dict):
+        raise HTTPException(400, "Context JSON must contain an object")
+    return {"path": path, "data": data}
 
 
 @app.post("/api/save")
