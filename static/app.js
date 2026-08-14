@@ -1453,7 +1453,7 @@ CONTEXT_TEXT_FIELDS.forEach(name=>{
     if(!$('contextSuggest').classList.contains('hidden')){
       if(e.key==='ArrowDown'||e.key==='ArrowUp'){ e.preventDefault(); CA.suggestionIndex=(CA.suggestionIndex+(e.key==='ArrowDown'?1:-1)+CA.suggestions.length)%CA.suggestions.length;
         [...$('contextSuggest').children].forEach((b,i)=>b.classList.toggle('active',i===CA.suggestionIndex)); return; }
-      if(e.key==='Tab'||e.key===' '||e.key==='Enter'){ e.preventDefault(); completeContextSuggestion(CA.suggestionIndex,e.key); return; }
+      if(e.key==='Tab'||e.key==='Enter'){ e.preventDefault(); completeContextSuggestion(CA.suggestionIndex,e.key); return; }
       if(e.key==='Escape'){ e.preventDefault(); hideContextSuggestions(); }
     }
   });
