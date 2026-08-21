@@ -116,7 +116,7 @@ try:
         predictor = build_sam2_video_predictor(cfg, ckpt, device=device)
         SAM2_AVAILABLE = True
         CURRENT_CKPT, CURRENT_CFG = ckpt, cfg
-        print("[issas] SAM2 predictor initialised successfully")
+        print("[issas] SAM2 predictor initialised successfully (single shared predictor for Annotation and Review A/B)")
     except Exception as e:  # noqa: BLE001
         print(f"[issas] SAM2 predictor unavailable ({e}). Running in SIMULATION mode.")
 except Exception as e:  # noqa: BLE001
@@ -484,12 +484,13 @@ def extract_number(filename):
 # --------------------------------------------------------------------------- #
 #  Core SAM2 prediction (native resolution in, native resolution out)
 # --------------------------------------------------------------------------- #
-def sam_predict(frame_idx, obj_id, points, labels, box):
+def sam_predict(frame_idx, obj_id, points, labels, box, seed_mask=None):
     w, h = frame_size(frame_idx)
+    seed = b64_to_mask(seed_mask) if seed_mask else None
 
     # ---- Simulation fallback (no SAM2) ----
     if not SAM2_AVAILABLE or predictor is None or SESSION.inference_state is None:
-        mask = np.zeros((h, w), dtype=np.uint8)
+        mask = seed.astype(np.uint8).copy() if seed is not None else np.zeros((h, w), dtype=np.uint8)
         if box is not None:
             x1, y1, x2, y2 = [int(v) for v in box]
             mask[max(0, y1):min(h, y2), max(0, x1):min(w, x2)] = 1
@@ -508,6 +509,14 @@ def sam_predict(frame_idx, obj_id, points, labels, box):
         points_np = points_np.reshape(1, -1)
     labels_np = np.array(labels, dtype=np.int32) if labels else None
     box_np = np.array(box, dtype=np.float32) if box else None
+
+    if seed is not None and hasattr(predictor, "add_new_mask"):
+        predictor.add_new_mask(
+            inference_state=SESSION.inference_state,
+            frame_idx=frame_idx,
+            obj_id=obj_id,
+            mask=seed.astype(bool),
+        )
 
     _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
         inference_state=SESSION.inference_state,
@@ -697,6 +706,7 @@ class PredictReq(BaseModel):
     points: List[List[float]] = []
     labels: List[int] = []
     box: Optional[List[float]] = None
+    seed_mask: Optional[str] = None
 
 
 class PropagateReq(BaseModel):
@@ -1136,7 +1146,8 @@ def frame_meta(idx: int):
 @app.post("/api/predict")
 def predict(req: PredictReq):
     try:
-        mask = sam_predict(req.frame_idx, req.obj_id, req.points, req.labels, req.box)
+        mask = sam_predict(req.frame_idx, req.obj_id, req.points, req.labels,
+                           req.box, req.seed_mask)
         return {"obj_id": req.obj_id, "mask": mask_to_b64(mask)}
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
@@ -1314,7 +1325,12 @@ def _pair_metrics(a, b):
                 hd95 = float(np.percentile(alld, 95))
         except Exception:
             pass
+    # Sensitivity is reported with A as the reference mask and B as the
+    # refined/predicted mask, matching the directional comparison used by the
+    # Review class list.
+    sensitivity = 1.0 if sa == 0 and sb == 0 else (0.0 if sa == 0 else inter / sa)
     return {"dice": round(dice, 4), "iou": round(iou, 4),
+            "sen": round(sensitivity, 4),
             "hd": None if hd is None else round(hd, 2),
             "hd95": None if hd95 is None else round(hd95, 2)}
 
@@ -1559,6 +1575,28 @@ class FrameCompareReq(BaseModel):
     frame: str
 
 
+class ReviewLiveMetricsReq(BaseModel):
+    mask_a: str
+    mask_b: str
+
+
+class ReviewRefineSaveReq(BaseModel):
+    root: str
+    case: str
+    annotator: str
+    frame: str
+    objects: List[SaveObj]
+    mask_dir: Optional[str] = None
+
+
+class ReviewRefineImportReq(BaseModel):
+    root: str
+    case: str
+    annotator: str
+    frame: str
+    mask_dir: Optional[str] = None
+
+
 class ReviewImageReq(BaseModel):
     dir: str
     frame: str
@@ -1618,6 +1656,134 @@ def review_frame_compare(req: FrameCompareReq):
                     "mask_a": mask_to_b64(A), "mask_b": mask_to_b64(B),
                     "only_a": (cid not in ma), "only_b": (cid not in mb), **m})
     return {"width": w, "height": h, "frame": req.frame, "classes": out}
+
+
+@app.post("/api/review/live_metrics")
+def review_live_metrics(req: ReviewLiveMetricsReq):
+    """Exact per-class agreement for an in-memory, not-yet-saved refinement."""
+    try:
+        a, b = b64_to_mask(req.mask_a), b64_to_mask(req.mask_b)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"Invalid mask data: {exc}")
+    if a.shape != b.shape:
+        raise HTTPException(400, "Mask dimensions do not match")
+    return _pair_metrics(a, b)
+
+
+def _review_path_part(value: str, label: str) -> str:
+    value = (value or "").strip()
+    if not value or value in (".", "..") or os.path.basename(value) != value:
+        raise HTTPException(400, f"Invalid {label}")
+    return value
+
+
+@app.post("/api/review/save_refine")
+def review_save_refine(req: ReviewRefineSaveReq):
+    """Write a refined frame back to that annotator's mask and label folders."""
+    root = os.path.abspath(_norm(req.root))
+    annotator = _review_path_part(req.annotator, "annotator")
+    case = _review_path_part(req.case, "case")
+    frame = _review_path_part(req.frame, "frame")
+    case_dir = os.path.join(root, annotator, case)
+    if not os.path.isdir(case_dir):
+        raise HTTPException(400, f"Annotator case not found: {case_dir}")
+
+    try:
+        masks = [b64_to_mask(o.mask) for o in req.objects]
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"Invalid mask data: {exc}")
+    if masks:
+        shape = masks[0].shape
+        if any(mask.shape != shape for mask in masks):
+            raise HTTPException(400, "Mask dimensions do not match")
+    else:
+        existing = os.path.join(_case_mask_dir(root, annotator, case), frame)
+        if not os.path.isfile(existing):
+            raise HTTPException(400, "Cannot determine the empty mask dimensions")
+        with Image.open(existing) as image:
+            shape = (image.height, image.width)
+
+    class_mask = np.zeros(shape, dtype=np.uint8)
+    for obj, mask in zip(req.objects, masks):
+        class_mask[mask] = obj.class_id
+
+    mask_dir = os.path.abspath(_norm(req.mask_dir)) if req.mask_dir else _case_mask_dir(root, annotator, case)
+    os.makedirs(mask_dir, exist_ok=True)
+    base = os.path.splitext(frame)[0]
+    png_path = os.path.join(mask_dir, f"{base}.png")
+    _save_palette_png(class_mask, png_path)
+
+    # Keep the case's existing layout: legacy Review cases keep sidecar labels
+    # beside flat masks, while structured cases use sibling masks/labels dirs.
+    label_dir = case_dir if os.path.abspath(mask_dir) == os.path.abspath(case_dir) \
+        else (os.path.join(os.path.dirname(mask_dir), "labels")
+              if os.path.basename(os.path.normpath(mask_dir)).lower() == "masks"
+              else mask_dir)
+    os.makedirs(label_dir, exist_ok=True)
+    txt_path = os.path.join(label_dir, f"{base}.txt")
+    yolo_ok, yolo_err = False, "YOLO conversion script not found"
+    if os.path.exists(PNG2YOLO):
+        try:
+            result = subprocess.run(
+                [sys.executable, PNG2YOLO, png_path, txt_path],
+                capture_output=True, text=True, timeout=120)
+            yolo_ok = result.returncode == 0
+            if not yolo_ok:
+                details = (result.stderr or result.stdout or "").strip()
+                yolo_err = f"YOLO converter exited with code {result.returncode}"
+                if details:
+                    yolo_err += f": {details[-1200:]}"
+            else:
+                yolo_err = ""
+        except Exception as exc:  # noqa: BLE001
+            yolo_err = f"YOLO converter error: {exc}"
+
+    return {"png_path": png_path, "txt_path": txt_path if yolo_ok else None,
+            "yolo_ok": yolo_ok, "yolo_err": yolo_err}
+
+
+@app.post("/api/review/import_refine")
+def review_import_refine(req: ReviewRefineImportReq):
+    """Read one Review frame from an annotator-specific mask directory."""
+    root = os.path.abspath(_norm(req.root))
+    annotator = _review_path_part(req.annotator, "annotator")
+    case = _review_path_part(req.case, "case")
+    frame = _review_path_part(req.frame, "frame")
+    case_dir = os.path.join(root, annotator, case)
+    mask_dir = os.path.abspath(_norm(req.mask_dir)) if req.mask_dir else _case_mask_dir(root, annotator, case)
+    base = os.path.splitext(frame)[0]
+    png_path, txt_path = os.path.join(mask_dir, f"{base}.png"), os.path.join(mask_dir, f"{base}.txt")
+
+    if os.path.isfile(png_path):
+        with Image.open(png_path) as image:
+            arr = np.asarray(image.convert("P"))
+        h, w = arr.shape
+        masks = {int(cid): (arr == cid) for cid in np.unique(arr) if int(cid) != 0}
+    elif os.path.isfile(txt_path):
+        ref_png = os.path.join(_case_mask_dir(root, annotator, case), frame)
+        if not os.path.isfile(ref_png):
+            raise HTTPException(400, "YOLO import needs a reference frame with matching dimensions")
+        with Image.open(ref_png) as image:
+            w, h = image.size
+        masks = {}
+        with open(txt_path, encoding="utf-8") as handle:
+            for line in handle:
+                parts = line.split()
+                if len(parts) < 7:
+                    continue
+                cid = int(parts[0])
+                pts = [float(value) for value in parts[1:]]
+                poly = [(pts[i] * w, pts[i + 1] * h) for i in range(0, len(pts) - 1, 2)]
+                if len(poly) >= 3:
+                    layer = Image.fromarray((masks.get(cid, np.zeros((h, w), dtype=np.uint8)) * 255).astype(np.uint8), mode="L")
+                    ImageDraw.Draw(layer).polygon(poly, fill=255)
+                    masks[cid] = np.asarray(layer) > 0
+    else:
+        raise HTTPException(404, f"No {base}.png or {base}.txt in {mask_dir}")
+
+    return {"width": w, "height": h, "frame": frame,
+            "objects": [{"class_id": cid, "name": _class_name_for_id(cid),
+                         "mask": mask_to_b64(mask)} for cid, mask in sorted(masks.items())]}
 
 
 @app.get("/api/review/image")
@@ -1961,5 +2127,21 @@ app.mount("/static", StaticFiles(directory=os.path.join(SCRIPT_DIR, "static")), 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", "9010"))
-    print(f"[issas] open http://127.0.0.1:{port}")
-    uvicorn.run(app, host="127.0.0.1", port=port)
+    # Bind all interfaces by default so the same `python server.py` command
+    # works on macOS, native Linux, and from a Windows browser through WSL.
+    host = os.environ.get("ISSAS_HOST", "0.0.0.0")
+    browser_host = host
+    if host == "0.0.0.0":
+        try:
+            browser_host = subprocess.check_output(
+                ["hostname", "-I"], text=True, timeout=2).split()[0]
+        except (OSError, subprocess.SubprocessError, IndexError):
+            pass
+    if host == "0.0.0.0":
+        print(f"[issas] WSL local URL: http://127.0.0.1:{port}")
+        print(f"[issas] Windows browser URL: http://{browser_host}:{port}")
+    else:
+        print(f"[issas] open http://{browser_host}:{port}")
+    if host == "0.0.0.0":
+        print(f"[issas] listening on all interfaces (0.0.0.0:{port})")
+    uvicorn.run(app, host=host, port=port)

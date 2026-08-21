@@ -56,6 +56,7 @@ const V = {
   available: false, configured: false, fps: 0, duration: 0, name: null, caseName: null,
   clipStart: 0, clipEnd: 20, center: 0, mode: 'float', open: false,
   sourceKey: null, seekToken: 0, seekPending: false, fpsSource: null, frameIndex: 0,
+  sourceFrames: null, compare: false,
   floatRect: null, playbackRate: 1, contextSeconds: 10, loop: false,
   workflow: {available:false,phaseNames:{},intervals:[]},
 };
@@ -481,18 +482,21 @@ function undo(){
 
 // ---------- objects ----------
 function addObject(classId, name){
-  // unique obj id = classId*1000 + suffix (matches desktop tool)
-  const suffix=[...S.objects.keys()].filter(id=>Math.floor(id/1000)===classId || id===classId).length;
-  let id=classId*1000+suffix; while(S.objects.has(id)) id++;
-  const obj={id, classId, name:(suffix>0?`${name}_${suffix}`:name),
-             color:colorForObj(id), bin:new Uint8Array(S.W*S.H), tint:null, visible:true, centroid:null};
+  // A class may have multiple independent objects on one frame. Keep the
+  // class id shared for export/metrics, but allocate a distinct object id for
+  // prompts, visibility and undo history.
+  const base=classId*1000;
+  let suffix=0, id=base;
+  while(S.objects.has(id)){ suffix++; id=base+suffix; }
+  const obj={id, classId, name:(suffix>0?`${name} ${suffix+1}`:name),
+             color:annotationColorForClass(classId), bin:new Uint8Array(S.W*S.H), tint:null, visible:true, centroid:null};
   S.objects.set(id,obj); S.order.push(id);
   rebuildObjList(); selectObject(id);
   return obj;
 }
 function ensureObject(id, classId, name, color){
   if(S.objects.has(id)) return S.objects.get(id);
-  const obj={id, classId, name, color:color||colorForObj(id),
+  const obj={id, classId, name, color:color||annotationColorForClass(classId),
              bin:new Uint8Array(S.W*S.H), tint:null, visible:true, centroid:null};
   S.objects.set(id,obj); S.order.push(id); rebuildObjList();
   return obj;
@@ -573,6 +577,10 @@ function brushLine(x0,y0,x1,y1,add){
 
 // ---------- post-processing ----------
 async function applyPP(op){
+  if(typeof C!=='undefined' && C.open){
+    if(!C.refine.side){ toast('Select Refine A or Refine B first'); return; }
+    await applyCmpPostprocess(op); return;
+  }
   const obj=S.objects.get(S.currentId); if(!obj){ toast('Select an object'); return; }
   lockRaw(obj.id);   // freeze SAM2-raw before this correction
   const body={op, mask:binToPngB64(obj.bin), kernel: op==='gaussian'?S.gauss:S.morph, n:S.comp};
@@ -819,7 +827,8 @@ function videoTime(seconds, decimals=0){
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}${fraction}`;
 }
 function frameIdAt(index){
-  const name=S.frames[index]||'';
+  const names=V.sourceFrames||S.frames;
+  const name=names[index]||'';
   const stem=name.replace(/\.[^.]+$/,'');
   const parts=stem.match(/\d+/g);
   return parts&&parts.length? parseInt(parts[parts.length-1],10) : index;
@@ -911,7 +920,10 @@ function closeContextVideo(){
   V.open=false; V.seekToken++; V.seekPending=false; contextVideo.pause();
   $('videoLoading').classList.add('hidden');
   const win=$('videoWindow'); win.classList.add('hidden');
+  if(V.compare) $('cmpVideoPane').classList.remove('on');
   const stage=win.closest('.stage'); stage.classList.remove('video-split','video-main','video-narrow');
+  V.compare=false; V.sourceFrames=null;
+  syncCmpVideoLayout();
   requestAnimationFrame(resizeCanvas);
 }
 function updateVideoControls(){
@@ -1012,7 +1024,8 @@ function positionContextVideo(index, autoplay){
   if(V.clipEnd<=V.clipStart) V.clipEnd=V.clipStart+.01;
   $('videoSeek').min=V.clipStart; $('videoSeek').max=V.clipEnd; $('videoSeek').value=V.clipStart;
   $('videoTitle').textContent=V.name||'Context video';
-  $('videoSubtitle').textContent=`${S.frames[index]||'frame'} | ${videoTime(V.center)} | -${V.contextSeconds}s / +${V.contextSeconds}s`;
+  const names=V.sourceFrames||S.frames;
+  $('videoSubtitle').textContent=`${names[index]||'frame'} | ${videoTime(V.center)} | -${V.contextSeconds}s / +${V.contextSeconds}s`;
   updateVideoFrameMark();
   updateVideoControls();
   if(CA.open){ refreshContextAnnotationMeta(); positionContextAnnotation(); }
@@ -1022,7 +1035,26 @@ function openContextVideo(index=S.idx, autoplay=true){
   if(!V.available){ toast(V.configured?'No matching video for this case':'Set the video folder first','err'); return; }
   V.open=true;
   $('videoWindow').classList.remove('hidden'); setVideoMode(V.mode);
+  V.sourceFrames=null; V.compare=false;
   positionContextVideo(clampi(index,0,S.count-1),autoplay);
+}
+function openCompareVideo(index=C.idx, autoplay=true){
+  if(!V.available){ toast(V.configured?'No matching video for this case':'Set the video folder first','err'); return; }
+  const names=C.frames||[];
+  if(!names.length) return;
+  V.sourceFrames=names; V.compare=true; V.open=true;
+  const pane=$('cmpVideoPane'), win=$('videoWindow');
+  if(win.parentElement!==pane) pane.appendChild(win);
+  pane.classList.add('on'); win.classList.remove('hidden');
+  syncCmpVideoLayout();
+  setVideoMode('main');
+  positionContextVideo(clampi(index,0,names.length-1),autoplay);
+  requestAnimationFrame(()=>{ compareResize(); cmpRender(); });
+}
+function syncCmpVideoLayout(){
+  const visuals=$('cmpVisuals');
+  if(!visuals) return;
+  visuals.classList.toggle('cmp-dual-video',!!V.compare&&C.mode==='dual');
 }
 async function toggleVideoPlay(){
   if(contextVideo.paused){
@@ -1733,11 +1765,47 @@ bindVis('visPoints','points'); bindVis('visBoxes','boxes');
 
 // -- brush --
 $('brushBtn').addEventListener('click',()=>{
+  if(typeof C!=='undefined' && C.open){
+    if(!C.refine.side){ toast('Select Refine A or Refine B first'); return; }
+    C.refine.brush=!C.refine.brush;
+    const on=C.refine.brush;
+    $('cmpBrush').textContent='Brush: '+(on?'ON':'OFF');
+    $('cmpBrush').classList.toggle('on',on);
+    $('brushBtn').textContent='Brush: '+(on?'ON':'OFF'); $('brushBtn').classList.toggle('on',on);
+    cmpCanvas.classList.toggle('cmp-brushing',on);
+    if(!on) C.refine.brushCursor=null;
+    syncCmpCursor();
+    cmpRender();
+    return;
+  }
   S.brush=!S.brush; const b=$('brushBtn');
   b.textContent='Brush: '+(S.brush?'ON':'OFF'); b.classList.toggle('on',S.brush);
   canvas.style.cursor=S.brush?'none':'crosshair'; render();
 });
-$('brushSlider').addEventListener('input',e=>{ S.brushSize=+e.target.value; $('brushLabel').textContent=S.brushSize; render(); });
+$('brushSlider').addEventListener('input',e=>{
+  if(typeof C!=='undefined' && C.open){
+    if(!C.refine.side) return;
+    C.refine.brushSize=+e.target.value;
+    $('cmpBrushSize').value=C.refine.brushSize;
+    $('brushLabel').textContent=C.refine.brushSize;
+    cmpRender();
+    return;
+  }
+  S.brushSize=+e.target.value; $('brushLabel').textContent=S.brushSize; render();
+});
+function adjustActiveBrushSize(delta){
+  if(typeof C!=='undefined'&&C.open&&C.refine.side&&C.refine.brush){
+    C.refine.brushSize=clampi(C.refine.brushSize+delta,5,120);
+    $('cmpBrushSize').value=C.refine.brushSize; $('brushSlider').value=C.refine.brushSize;
+    $('brushLabel').textContent=C.refine.brushSize; cmpRender(); return true;
+  }
+  if(typeof C!=='undefined'&&C.open) return false;
+  if(S.brush){
+    S.brushSize=clampi(S.brushSize+delta,5,120);
+    $('brushSlider').value=S.brushSize; $('brushLabel').textContent=S.brushSize; render(); return true;
+  }
+  return false;
+}
 
 // -- post-processing steppers --
 document.querySelectorAll('[data-pp]').forEach(btn=>btn.addEventListener('click',()=>{
@@ -1749,7 +1817,8 @@ document.querySelectorAll('[data-pp]').forEach(btn=>btn.addEventListener('click'
 document.querySelectorAll('[data-apply]').forEach(btn=>btn.addEventListener('click',()=>applyPP(btn.dataset.apply)));
 
 // -- add object (styled class picker) --
-$('addObjBtn').addEventListener('click', openAddObj);
+let addObjTarget='annotation';
+$('addObjBtn').addEventListener('click', ()=>openAddObj(C.open?'review':'annotation'));
 $('addObjClose').addEventListener('click', closeAddObj);
 $('addObj').addEventListener('click', e=>{ if(e.target.id==='addObj') closeAddObj(); });
 $('classSearch').addEventListener('input', renderClassList);
@@ -1758,17 +1827,28 @@ $('classSearch').addEventListener('keydown', e=>{
   if(e.key==='Escape') closeAddObj();
 });
 
-function openAddObj(){
-  if(!S.count){ toast('Open a folder first'); return; }
+function openAddObj(target='annotation'){
+  if(target==='annotation'&&!S.count){ toast('Open a folder first'); return; }
+  if(target==='review'&&(!C.open||!C.refine.side)){ toast('Select Refine A or Refine B first'); return; }
+  addObjTarget=target;
+  $('addObjTitle').textContent=target==='review'?`Add class to ${cmpRefineAnn()}`:'Add object';
   $('classSearch').value=''; renderClassList();
   $('addObj').classList.remove('hidden'); $('classSearch').focus();
 }
 function closeAddObj(){ $('addObj').classList.add('hidden'); }
-function classDot(classId){ const [r,g,b]=colorForObj(classId*1000); return `rgb(${r},${g},${b})`; }
+function annotationColorForClass(classId){ return colorForObj(classId); }
+function classDot(classId){ const [r,g,b]=annotationColorForClass(classId); return `rgb(${r},${g},${b})`; }
+function addPickedClass(classId,name){
+  closeAddObj();
+  if(addObjTarget==='review') addCmpClass(classId,name);
+  else addObject(classId,name);
+}
 
 function renderClassList(){
   const q=$('classSearch').value.trim().toLowerCase();
   const list=$('classList'); list.innerHTML='';
+  const existingAnnotationClasses=addObjTarget==='annotation'
+    ? new Set([...S.objects.values()].map(obj=>obj.classId)) : new Set();
   const known=new Set([...Object.keys(S.classGroups.tissue||{}), ...Object.keys(S.classGroups.instrument||{})]);
   const custom={}; for(const [n,i] of Object.entries(S.classMap)) if(!known.has(n)) custom[n]=i;
   const groups=[['Tissue & organs', S.classGroups.tissue||{}],
@@ -1782,8 +1862,8 @@ function renderClassList(){
     for(const n of names){
       const row=document.createElement('div'); row.className='class-row';
       row.innerHTML=`<span class="obj-dot" style="background:${classDot(gmap[n])}"></span>
-        <span class="class-name">${n}</span><span class="mono class-id">#${gmap[n]}</span>`;
-      row.addEventListener('click',()=>{ addObject(gmap[n], n); closeAddObj(); });
+        <span class="class-name">${n}</span><span class="mono class-id">${existingAnnotationClasses.has(+gmap[n])?'add another':'#'+gmap[n]}</span>`;
+      row.addEventListener('click',()=>addPickedClass(gmap[n],n));
       list.appendChild(row);
     }
   }
@@ -1795,7 +1875,7 @@ function renderClassList(){
     row.innerHTML=`<span class="ico">＋</span><span class="class-name">Add custom class “${norm}”</span>`;
     row.addEventListener('click',()=>{
       const ids=Object.values(S.classMap); const cid=(ids.length?Math.max(...ids):0)+1;
-      S.classMap[norm]=cid; addObject(cid, norm); closeAddObj();
+      S.classMap[norm]=cid; addPickedClass(cid,norm);
     });
     list.appendChild(row);
   }
@@ -1837,19 +1917,24 @@ $('diceBtn').addEventListener('click', diceReport);
 async function diceReport(){
   if(!S.count){ toast('Open a folder first'); return; }
   commitFrame(S.idx);                 // include the live frame's final masks
-  const records=[];
+  // Multiple Annotation objects can share one class (for example two liver
+  // regions). Agreement is class-level, so union those object masks per frame
+  // and kind before asking the server for Dice.
+  const grouped=new Map();
   for(const [frame, m] of S.rawMasks){
     const finals=S.frameMasks.get(frame);
     for(const [objId, raw] of m){
       const finBin = finals && finals.get(objId);
       if(!finBin && !raw.bin.some(v=>v)) continue;   // nothing on either side
-      records.push({
-        frame_idx:frame, obj_id:objId, class_id:raw.classId, kind:raw.kind,
-        raw: binToPngB64(raw.bin),
-        final: binToPngB64(finBin || new Uint8Array(S.W*S.H)),
-      });
+      const key=`${frame}\n${raw.classId}\n${raw.kind}`;
+      let item=grouped.get(key);
+      if(!item){ item={frame_idx:frame,obj_id:raw.classId,class_id:raw.classId,kind:raw.kind,
+        raw:new Uint8Array(S.W*S.H),final:new Uint8Array(S.W*S.H)}; grouped.set(key,item); }
+      const fin=finBin||new Uint8Array(S.W*S.H);
+      for(let i=0;i<item.raw.length;i++){ if(raw.bin[i]) item.raw[i]=1; if(fin[i]) item.final[i]=1; }
     }
   }
+  const records=[...grouped.values()].map(item=>({...item,raw:binToPngB64(item.raw),final:binToPngB64(item.final)}));
   if(records.length===0){ toast('No SAM2 masks captured yet — annotate some frames first'); return; }
   showOverlay('Computing Dice…');
   const {ok,j}=await API.post('/api/dice',{records}); hideOverlay();
@@ -1893,7 +1978,11 @@ function downloadDice(fmt){
 
 // ---------- Review mode: multi-annotator agreement ----------
 const R = {scan:null, data:null, kind:'inter', metric:'dice', sort:'value-desc', agg:'macro'};
-$('reviewBtn').addEventListener('click', openReview);
+$('reviewBtn').addEventListener('click',()=>{
+  // Review is a workspace toggle: leave Compare/refine before opening the review panel.
+  if(C.open){ closeCompareWorkspace(); return; }
+  openReview();
+});
 $('reviewClose').addEventListener('click',()=>$('reviewModal').classList.add('hidden'));
 $('reviewModal').addEventListener('click',e=>{ if(e.target.id==='reviewModal') $('reviewModal').classList.add('hidden'); });
 $('reviewBrowse').addEventListener('click',()=>openBrowser({title:'Choose Results root', start:$('reviewRoot').value||R.defaultRoot, onSelect:p=>{ if(p){ $('reviewRoot').value=p; reviewScan(); } }}));
@@ -1927,7 +2016,7 @@ async function refineInEditor(root, cse, ann, framesDir, rid){
   S.refineSrc = `${root}/${ann}/${cse}`;
   S.propagation=false; $('propBtn').textContent='Propagation: OFF'; $('propBtn').classList.remove('on');
   $('reviewModal').classList.add('hidden');
-  $('compareModal').classList.add('hidden'); C.open=false;
+  if(C.open) closeCompareWorkspace();
   await loadFrame(0,{force:true, noProp:true}); fitViewSoon();
   toast(`Refining ${ann} → saves to ${rid}/${cse} (PNG)`,'ok');
 }
@@ -1947,6 +2036,8 @@ function segBind(id,attr,cb){
     [...$(id).children].forEach(x=>x.classList.remove('on')); b.classList.add('on'); cb(b.dataset[attr]); });
 }
 async function openReview(){
+  const wasOpen=!$('reviewModal').classList.contains('hidden');
+  if(wasOpen){ $('reviewModal').classList.add('hidden'); return; }
   if(!$('reviewRoot').value){
     try{ const d=await API.get('/api/review/default_root'); R.defaultRoot=d.root; $('reviewRoot').value=d.root; }catch(_){}
   }
@@ -2108,59 +2199,631 @@ function downloadReview(fmt){
 // ---------- Compare: visual diff / dual-screen ----------
 const C = {open:false, root:null, case:null, a:null, b:null, frames:[], idx:0,
            mode:'overlay', framesDir:'', showFrame:true, w:0, h:0, data:null, img:null,
-           bins:{}, visible:new Set(), solo:null, classSort:{key:'dice',dir:-1},
+           displayOrder:['a','b'],
+           bins:{}, visible:{a:new Set(),b:new Set()}, knownClasses:new Set(), solo:null, classSort:{key:'dice',dir:-1},
            view:{scale:1,panX:0,panY:0}, panning:false, panStart:null,
-           layer:null, layerA:null, layerB:null, scores:[], scoreHover:null};
+           layer:null, layerA:null, layerB:null, scores:[], scoreHover:null, scoreThreshold:.9, scoreRefreshBusy:false,
+           panelState:null, pendingNav:null,
+           refine:{side:null, selectedClassId:null, readyDir:null, sourceNames:[], busy:false,
+                   prompts:new Map(), promptSeeds:new Map(), drafts:new Map(),
+                   io:{a:{importDir:null,saveDir:null},b:{importDir:null,saveDir:null}},
+                   brush:false, brushSize:20, brushing:false, brushPositive:true, brushLast:null, brushBefore:null,
+                   brushCursor:null, brushRenderPending:false, pendingPoints:[], flash:null,
+                   editors:{a:{classId:null,history:new Map(),future:new Map()},
+                            b:{classId:null,history:new Map(),future:new Map()}}}};
 const cmpCanvas=$('cmpCanvas'); const cctx=cmpCanvas.getContext('2d');
 const CMP_AGREE=[55,229,160], CMP_AONLY=[80,180,255], CMP_BONLY=[255,90,170];
-function classColorRGB(cid){ return colorForObj(cid*1000); }
+try{
+  const savedThreshold=Number(localStorage.getItem('issas.review.diceThreshold'));
+  if(Number.isFinite(savedThreshold)&&savedThreshold>=0&&savedThreshold<=1) C.scoreThreshold=savedThreshold;
+}catch(_){}
+function cmpBaseClassId(cid){
+  const item=C.bins?.[cid];
+  return Number(item?.baseClassId??item?.meta?.base_class_id??cid);
+}
+function classColorRGB(cid){ return annotationColorForClass(cmpBaseClassId(cid)); }
+function syncCmpCursor(){
+  cmpCanvas.style.cursor=C.refine.side?(C.refine.brush?'none':'crosshair'):'crosshair';
+}
 
 $('reviewCompareBtn').addEventListener('click', openCompare);
-$('cmpRefineA').addEventListener('click',()=>refineInEditor(C.root, C.case, C.a, C.framesDir, $('refineReviewer').value.trim()||'reviewer'));
-$('cmpRefineB').addEventListener('click',()=>refineInEditor(C.root, C.case, C.b, C.framesDir, $('refineReviewer').value.trim()||'reviewer'));
-$('cmpClose').addEventListener('click',()=>{ $('compareModal').classList.add('hidden'); C.open=false; });
-$('cmpFramesBrowse').addEventListener('click',()=>openBrowser({title:'Choose frames folder for this case', start:C.framesDir||S.defaultPath, onSelect:p=>{ if(p){ C.framesDir=p; $('cmpFramesDir').value=p; loadCmpFrame(C.idx); } }}));
-$('cmpFramesDir').addEventListener('change',e=>{ C.framesDir=e.target.value.trim(); loadCmpFrame(C.idx); });
+$('cmpRefineA').addEventListener('click',()=>startCmpRefine('a'));
+$('cmpRefineB').addEventListener('click',()=>startCmpRefine('b'));
+$('cmpSwapSides').addEventListener('click',swapCmpDisplaySides);
+$('cmpAddClass').addEventListener('click',()=>openAddObj('review'));
+$('reviewImportBtn').addEventListener('click',()=>importCmpMasks());
+$('cmpBrush').addEventListener('click',()=>{
+  C.refine.brush=!C.refine.brush;
+  $('cmpBrush').textContent='Brush: '+(C.refine.brush?'ON':'OFF');
+  $('cmpBrush').classList.toggle('on',C.refine.brush);
+  $('brushBtn').textContent='Brush: '+(C.refine.brush?'ON':'OFF'); $('brushBtn').classList.toggle('on',C.refine.brush);
+  cmpCanvas.classList.toggle('cmp-brushing',C.refine.brush);
+  if(!C.refine.brush) C.refine.brushCursor=null;
+  syncCmpCursor();
+  cmpRender();
+});
+$('cmpBrushSize').addEventListener('input',e=>{
+  C.refine.brushSize=+e.target.value; $('brushSlider').value=C.refine.brushSize;
+  $('brushLabel').textContent=C.refine.brushSize; cmpRender();
+});
+$('cmpApplyGaussian').addEventListener('click',()=>applyCmpPostprocess('gaussian'));
+$('cmpApplyMorph').addEventListener('click',()=>applyCmpPostprocess('morph'));
+$('cmpApplyComponents').addEventListener('click',()=>applyCmpPostprocess('components'));
+$('cmpRefineUndo').addEventListener('click', undoCmpRefine);
+$('cmpRefineRedo').addEventListener('click', redoCmpRefine);
+$('cmpRefineReset').addEventListener('click', resetCmpRefine);
+$('cmpRefineSave').addEventListener('click', saveCmpRefine);
+$('cmpClose').addEventListener('click',closeCompareWorkspace);
+$('cmpFramesBrowse').addEventListener('click',()=>openBrowser({title:'Choose frames folder for this case', start:C.framesDir||S.defaultPath, onSelect:async p=>{ if(p&&await guardCmpUnsaved()){ C.framesDir=p; C.refine.readyDir=null; $('cmpFramesDir').value=p; loadCmpFrame(C.idx); } }}));
+$('cmpFramesDir').addEventListener('change',async e=>{ if(!await guardCmpUnsaved()){ e.target.value=C.framesDir; return; } C.framesDir=e.target.value.trim(); C.refine.readyDir=null; loadCmpFrame(C.idx); });
 $('cmpShowFrame').addEventListener('change',e=>{ C.showFrame=e.target.checked;
   if(C.showFrame && !C.framesDir) toast('Set a frames folder to show the background');
   cmpRender(); });
-$('cmpPrev').addEventListener('click',()=>loadCmpFrame(C.idx-1));
-$('cmpNext').addEventListener('click',()=>loadCmpFrame(C.idx+1));
-$('cmpSlider').addEventListener('change',e=>loadCmpFrame(+e.target.value));
-$('cmpA').addEventListener('change',async()=>{ C.a=$('cmpA').value; await setCompareFramesDir(); reloadCmpFrames(); });
-$('cmpB').addEventListener('change',async()=>{ C.b=$('cmpB').value; await setCompareFramesDir(); reloadCmpFrames(); });
-segBind('cmpMode','cm',v=>{ C.mode=v; buildCmpLayers(); cmpRender(); updateLegend(); });
+$('cmpPrev').addEventListener('click',()=>requestCmpFrame(C.idx-1));
+$('cmpNext').addEventListener('click',()=>requestCmpFrame(C.idx+1));
+$('cmpSlider').addEventListener('change',e=>requestCmpFrame(+e.target.value));
+$('cmpSlider').addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  const rect=e.target.getBoundingClientRect();
+  const ratio=Math.max(0,Math.min(1,(e.clientX-rect.left)/Math.max(1,rect.width)));
+  const index=Math.round(ratio*Math.max(0,C.frames.length-1));
+  openCompareVideo(index,true);
+});
+$('cmpScoreThreshold').value=C.scoreThreshold.toFixed(2);
+$('cmpScoreThreshold').addEventListener('input',e=>{
+  const threshold=Number(e.target.value);
+  if(!Number.isFinite(threshold)||threshold<0||threshold>1) return;
+  C.scoreThreshold=threshold;
+  try{ localStorage.setItem('issas.review.diceThreshold',String(threshold)); }catch(_){}
+  drawScores();
+});
+$('cmpScoreThreshold').addEventListener('change',e=>{
+  const threshold=Math.max(0,Math.min(1,Number(e.target.value)||0));
+  C.scoreThreshold=threshold; e.target.value=threshold.toFixed(2); drawScores();
+});
+$('cmpScoreRefresh').addEventListener('click',refreshCmpScoresFromDisk);
+$('cmpA').addEventListener('change',async()=>{ const next=$('cmpA').value, side=C.refine.side||'a'; $('cmpA').value=C.a; if(!await guardCmpUnsaved()) return; stopCmpRefine(); C.a=next; C.refine.readyDir=null; $('cmpA').value=next; loadCmpIoPaths(); await setCompareFramesDir(); await reloadCmpFrames(); await startCmpRefine(side); });
+$('cmpB').addEventListener('change',async()=>{ const next=$('cmpB').value, side=C.refine.side||'a'; $('cmpB').value=C.b; if(!await guardCmpUnsaved()) return; stopCmpRefine(); C.b=next; C.refine.readyDir=null; $('cmpB').value=next; loadCmpIoPaths(); await setCompareFramesDir(); await reloadCmpFrames(); await startCmpRefine(side); });
+segBind('cmpMode','cm',v=>{ C.mode=v; syncCmpVideoLayout(); compareResize(); buildCmpLayers(); cmpRender(); updateLegend(); });
 $('cmpSort').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
   const key=b.dataset.cs;
   if(C.classSort.key===key){ C.classSort.dir*=-1; }
-  else { C.classSort.key=key; C.classSort.dir = (key==='class_name'||key==='hd95')? 1 : -1; }
+  else { C.classSort.key=key; C.classSort.dir = (key==='class_name'||key==='hd'||key==='hd95')? 1 : -1; }
   [...$('cmpSort').children].forEach(x=>x.classList.toggle('on',x.dataset.cs===key));
   renderCmpClasses(); });
 $('cmpAll').addEventListener('change',e=>{
   C.solo=null;
-  C.visible = e.target.checked ? new Set(C.data.classes.map(c=>c.class_id)) : new Set();
+  const sides=C.refine.side?[C.refine.side]:['a','b'];
+  for(const side of sides) C.visible[side]=e.target.checked?new Set(C.data.classes.map(c=>c.class_id)):new Set();
   buildCmpLayers(); cmpRender(); renderCmpClasses();
 });
 
+function cmpRefineAnn(side=C.refine.side){ return side==='a'?C.a:C.b; }
+function cmpDisplaySide(position){ return C.displayOrder[position]; }
+function cmpDisplayPosition(side){ return C.displayOrder.indexOf(side); }
+function syncCmpSideControls(){
+  const swap=$('cmpSwapSides'), parent=swap.parentElement;
+  const first=$(`cmpRefine${cmpDisplaySide(0).toUpperCase()}`);
+  const second=$(`cmpRefine${cmpDisplaySide(1).toUpperCase()}`);
+  parent.insertBefore(first,swap); parent.insertBefore(second,swap.nextSibling);
+}
+function swapCmpDisplaySides(){
+  C.displayOrder=[C.displayOrder[1],C.displayOrder[0]];
+  syncCmpSideControls(); buildCmpLayers(); renderCmpClasses(); cmpRender(); updateLegend();
+}
+function cmpEditor(side=C.refine.side){ return C.refine.editors[side]; }
+function cmpClassId(side=C.refine.side){ return C.refine.selectedClassId??cmpEditor(side)?.classId??null; }
+function selectCmpClass(cid){
+  C.refine.selectedClassId=cid==null?null:+cid;
+  C.refine.editors.a.classId=C.refine.selectedClassId;
+  C.refine.editors.b.classId=C.refine.selectedClassId;
+}
+function cmpDraftKey(side=C.refine.side, frame=C.frames[C.idx]){ return `${C.root}\n${C.case}\n${cmpRefineAnn(side)}\n${frame}`; }
+function cmpPromptKey(cid, side=C.refine.side, frame=C.frames[C.idx]){ return `${cmpDraftKey(side,frame)}\n${cid}`; }
+function cmpPromptSeedKey(cid, side=C.refine.side, frame=C.frames[C.idx]){ return cmpPromptKey(cid,side,frame); }
+function invalidateCmpPromptSeed(side,cid,frame=C.frames[C.idx]){
+  C.refine.promptSeeds.delete(cmpPromptSeedKey(cid,side,frame));
+}
+function cmpStack(kind,side=C.refine.side,frame=C.frames[C.idx]){
+  const map=cmpEditor(side)[kind], key=cmpDraftKey(side,frame);
+  if(!map.has(key)) map.set(key,[]);
+  return map.get(key);
+}
+function clearCmpStacks(side=C.refine.side,frame=C.frames[C.idx]){
+  const key=cmpDraftKey(side,frame); cmpEditor(side).history.delete(key); cmpEditor(side).future.delete(key);
+}
+function cmpIoStorageKey(side,kind){ return `issas.review.${kind}.${C.root}|${C.case}|${cmpRefineAnn(side)}`; }
+function loadCmpIoPaths(){
+  for(const side of ['a','b']) for(const kind of ['importDir','saveDir']){
+    const storeKind=kind==='importDir'?'import':'save';
+    C.refine.io[side][kind]=LS.get(cmpIoStorageKey(side,storeKind));
+  }
+}
+function cmpDefaultMaskDir(side){ return `${C.root.replace(/\/+$/,'')}/${cmpRefineAnn(side)}/${C.case}/masks`; }
+function chooseCmpSides(action, defaults){
+  defaults=defaults&&defaults.length?defaults:(C.refine.side?[C.refine.side]:['a','b']);
+  return new Promise(resolve=>{
+    const modal=$('uiDialog'), ok=$('uiDialogOk'), cancel=$('uiDialogCancel');
+    $('uiDialogTitle').textContent=`${action} Review masks`;
+    $('uiDialogBody').innerHTML=`<div style="margin-bottom:10px">Choose the screens to ${action.toLowerCase()}.</div>
+      <label class="switch"><span>A · ${C.a}</span><input id="cmpIoA" type="checkbox" ${defaults.includes('a')?'checked':''}><i></i></label>
+      <label class="switch"><span>B · ${C.b}</span><input id="cmpIoB" type="checkbox" ${defaults.includes('b')?'checked':''}><i></i></label>
+      <label class="switch"><span>Choose/change folders</span><input id="cmpIoChange" type="checkbox"><i></i></label>`;
+    $('uiDialogOption').classList.add('hidden'); ok.textContent='Continue'; ok.className='btn btn-accent'; ok.style.cssText='';
+    modal.classList.remove('hidden');
+    const done=value=>{ modal.classList.add('hidden'); ok.onclick=cancel.onclick=modal.onclick=null; resolve(value); };
+    ok.onclick=()=>{ const sides=[]; if($('cmpIoA').checked)sides.push('a'); if($('cmpIoB').checked)sides.push('b'); if(!sides.length){ toast('Choose A, B, or both','err'); return; } sides.forcePaths=$('cmpIoChange').checked; done(sides); };
+    cancel.onclick=()=>done(null); modal.onclick=e=>{ if(e.target.id==='uiDialog') done(null); };
+  });
+}
+function browseCmpDir(side,kind){
+  const io=C.refine.io[side], key=kind==='import'?'importDir':'saveDir';
+  return new Promise(resolve=>openBrowser({title:`Choose ${kind} masks folder for ${side.toUpperCase()} · ${cmpRefineAnn(side)}`,
+    start:io[key]||cmpDefaultMaskDir(side), onSelect:dir=>{
+      if(dir){ io[key]=dir; LS.set(cmpIoStorageKey(side,kind),dir); }
+      resolve(dir||null);
+    }}));
+}
+function cmpDirtySides(frame=C.frames[C.idx]){
+  return ['a','b'].filter(side=>C.refine.drafts.has(cmpDraftKey(side,frame)));
+}
+function promptCmpUnsaved(sides){
+  return new Promise(resolve=>{
+    const names=sides.map(side=>`${side.toUpperCase()} · ${cmpRefineAnn(side)}`).join(', ');
+    $('reviewUnsavedBody').textContent=`Unsaved masks were found for ${names} on ${C.frames[C.idx]}.`;
+    $('reviewUnsaved').classList.remove('hidden');
+    const done=value=>{ $('reviewUnsaved').classList.add('hidden'); $('reviewUnsavedCancel').onclick=$('reviewUnsavedLeave').onclick=$('reviewUnsavedSave').onclick=null; resolve(value); };
+    $('reviewUnsavedCancel').onclick=()=>done('cancel'); $('reviewUnsavedLeave').onclick=()=>done('leave'); $('reviewUnsavedSave').onclick=()=>done('save');
+  });
+}
+function discardCmpDrafts(frame,sides){
+  for(const side of sides){
+    C.refine.drafts.delete(cmpDraftKey(side,frame)); clearCmpStacks(side,frame);
+    const prefix=cmpDraftKey(side,frame)+'\n';
+    for(const key of [...C.refine.prompts.keys()]) if(key.startsWith(prefix)) C.refine.prompts.delete(key);
+    for(const key of [...C.refine.promptSeeds.keys()]) if(key.startsWith(prefix)) C.refine.promptSeeds.delete(key);
+  }
+}
+async function guardCmpUnsaved(){
+  const sides=cmpDirtySides(); if(!sides.length) return true;
+  const choice=await promptCmpUnsaved(sides); if(choice==='cancel') return false;
+  if(choice==='save') return await saveCmpRefine(sides,{choose:false});
+  discardCmpDrafts(C.frames[C.idx],sides); return true;
+}
+async function requestCmpFrame(index){
+  index=clampi(index,0,C.frames.length-1); if(index===C.idx) return;
+  if(!await guardCmpUnsaved()){ $('cmpSlider').value=C.idx; $('frameSlider').value=C.idx; return; }
+  await loadCmpFrame(index);
+}
+function enterCompareWorkspace(){
+  const modal=$('compareModal'), card=modal.querySelector('.compare-card')||document.querySelector('.compare-card');
+  $('reviewModal').classList.add('hidden');
+  card.style.transform='';
+  document.querySelector('.stage').appendChild(card);
+  modal.classList.add('hidden');
+  C.panelState={left:document.body.classList.contains('no-left'),right:document.body.classList.contains('no-right'),bottom:document.body.classList.contains('no-bottom')};
+  document.body.classList.remove('no-left','no-right','no-bottom');
+  document.body.classList.add('review-compare');
+  const sideHead=document.querySelector('.cmp-side-h'); document.querySelector('.panel-left').insertBefore(sideHead,$('objList'));
+  $('addObjBtn').textContent='+ Add class';
+  $('addObjBtn').disabled=true;
+  $('leftPanelTitle').textContent='Classes';
+  $('reviewBtn').classList.add('btn-accent');
+  $('modeBadge').textContent='review compare'; $('modeBadge').className='badge badge-live';
+}
+async function closeCompareWorkspace(){
+  if(!C.open) return;
+  if(!await guardCmpUnsaved()) return;
+  if(V.compare || $('videoWindow').parentElement===$('cmpVideoPane')){
+    closeContextVideo();
+    document.querySelector('.stage').appendChild($('videoWindow'));
+  }
+  stopCmpRefine();
+  const modal=$('compareModal'), card=document.querySelector('.compare-card'), sideHead=document.querySelector('.cmp-side-h');
+  document.querySelector('.cmp-side').prepend(sideHead);
+  modal.appendChild(card); modal.classList.add('hidden');
+  document.body.classList.remove('review-compare');
+  if(C.panelState?.left) document.body.classList.add('no-left');
+  if(C.panelState?.right) document.body.classList.add('no-right');
+  if(C.panelState?.bottom) document.body.classList.add('no-bottom');
+  C.panelState=null;
+  $('addObjBtn').textContent='+ Add object'; $('addObjBtn').disabled=false;
+  $('leftPanelTitle').textContent='Objects';
+  $('reviewBtn').classList.remove('btn-accent');
+  C.open=false; rebuildObjList(); render();
+  $('frameSlider').max=Math.max(0,S.count-1); $('frameSlider').value=S.idx; $('position').textContent=`${S.count?S.idx+1:0} / ${S.count}`;
+  $('modeBadge').textContent=S.count?'annotation':'no session';
+  $('modeBadge').className='badge '+(S.count?'badge-live':'badge-muted');
+}
+function cmpFrameSourceIndex(){
+  const base=(C.frames[C.idx]||'').replace(/\.[^.]+$/,'');
+  return C.refine.sourceNames.findIndex(name=>name.replace(/\.[^.]+$/,'')===base);
+}
+function updateCmpRefineUI(){
+  const active=!!C.refine.side, ann=active?cmpRefineAnn():'';
+  $('cmpRefineBar').classList.toggle('hidden',!C.open);
+  $('cmpRefineA').classList.toggle('on',C.refine.side==='a');
+  $('cmpRefineB').classList.toggle('on',C.refine.side==='b');
+  cmpCanvas.classList.toggle('refining',active);
+  syncCmpCursor();
+  if(C.open) $('addObjBtn').disabled=!active||C.refine.busy;
+  if(!active) return;
+  const cl=C.data&&C.data.classes.find(x=>x.class_id===cmpClassId());
+  $('cmpRefineStatus').textContent=`${ann} · ${cl?cl.class_name:'Select a class'} · ${C.frames[C.idx]||''} · SAM2 shared`;
+  const dirty=C.refine.drafts.has(cmpDraftKey());
+  $('cmpRefineDirty').classList.toggle('hidden',!dirty);
+  $('cmpRefineSave').disabled=!dirty||C.refine.busy;
+  $('cmpRefineUndo').disabled=!cmpStack('history').length||C.refine.busy;
+  $('cmpRefineRedo').disabled=!cmpStack('future').length||C.refine.busy;
+  $('cmpAddClass').disabled=C.refine.busy;
+  $('cmpRefineReset').disabled=C.refine.busy;
+}
+async function startCmpRefine(side){
+  if(C.refine.busy) return;
+  if(!C.framesDir) C.framesDir=$('cmpFramesDir').value.trim();
+  if(!C.framesDir){ toast('Set the frames folder before refining','err'); return; }
+  if(!C.data){ toast('Load a comparison frame before refining','err'); return; }
+  C.refine.side=side;
+  const editor=cmpEditor(side);
+  const selected=C.data.classes.some(x=>x.class_id===C.refine.selectedClassId)
+    ? C.refine.selectedClassId : (C.data.classes[0]?.class_id??null);
+  selectCmpClass(selected); editor.classId=selected;
+  if(editor.classId!=null) C.visible[side].add(editor.classId);
+  updateCmpRefineUI(); renderCmpClasses(); cmpRender();
+  if(C.refine.readyDir===C.framesDir) return;
+  C.refine.busy=true; updateCmpRefineUI(); showOverlay('Preparing SAM2 for Review refine…');
+  const opened=await API.post('/api/open_folder',{path:C.framesDir});
+  if(!opened.ok){ C.refine.busy=false; stopCmpRefine(); hideOverlay(); toast(opened.j.detail||'Could not open frames','err'); return; }
+  try{ applyVideoStatus(await API.get('/api/video/status')); }catch(_){ /* video is optional */ }
+  const initialized=await API.post('/api/init',{}); hideOverlay();
+  C.refine.busy=false;
+  if(!initialized.ok){ stopCmpRefine(); toast(initialized.j.detail||'SAM2 initialization failed','err'); return; }
+  C.refine.readyDir=C.framesDir; C.refine.sourceNames=opened.j.names||[];
+  updateCmpRefineUI();
+  toast(`Refining ${cmpRefineAnn()} in Review · shared SAM2 model`,'ok');
+  // A click made while the shared predictor was initializing is queued by the
+  // canvas handler; start it as soon as initialization releases the busy flag.
+  runNextCmpRefinePoint();
+}
+function stopCmpRefine(){
+  C.refine.side=null; C.refine.busy=false; C.refine.brush=false; C.refine.brushing=false;
+  C.refine.brushCursor=null; C.refine.pendingPoints=[];
+  $('cmpBrush').textContent='Brush: OFF'; $('cmpBrush').classList.remove('on'); cmpCanvas.classList.remove('cmp-brushing');
+  $('brushBtn').textContent='Brush: OFF'; $('brushBtn').classList.remove('on');
+  updateCmpRefineUI(); if(C.data){ renderCmpClasses(); cmpRender(); }
+}
+function binToPngB64WH(bin,w,h){
+  const c=document.createElement('canvas'); c.width=w; c.height=h; const cx=c.getContext('2d');
+  const im=cx.createImageData(w,h); for(let i=0,p=0;i<bin.length;i++,p+=4){ const v=bin[i]?255:0; im.data[p]=im.data[p+1]=im.data[p+2]=v; im.data[p+3]=255; }
+  cx.putImageData(im,0,0); return c.toDataURL('image/png').split(',')[1];
+}
+function cmpSideBins(side=C.refine.side){
+  const key=side==='a'?'a':'b';
+  return Object.entries(C.bins).map(([cid,value])=>({class_id:cmpBaseClassId(cid),bin:value[key]}));
+}
+async function importCmpMasks(sides=null){
+  sides=sides||await chooseCmpSides('Import'); if(!sides) return false;
+  C.refine.busy=true; updateCmpRefineUI();
+  for(const side of sides){
+    let dir=sides.forcePaths?null:C.refine.io[side].importDir;
+    if(!dir) dir=await browseCmpDir(side,'import');
+    if(!dir){ C.refine.busy=false; updateCmpRefineUI(); return false; }
+    const response=await API.post('/api/review/import_refine',{root:C.root,case:C.case,annotator:cmpRefineAnn(side),frame:C.frames[C.idx],mask_dir:dir});
+    if(!response.ok){ C.refine.busy=false; updateCmpRefineUI(); toast(`${side.toUpperCase()} import failed: ${response.j.detail||'unknown error'}`,'err'); return false; }
+    if(response.j.width!==C.w||response.j.height!==C.h){ C.refine.busy=false; updateCmpRefineUI(); toast(`${side.toUpperCase()} mask dimensions do not match`,'err'); return false; }
+    const imported=new Map();
+    for(const obj of response.j.objects) imported.set(+obj.class_id,await pngB64ToBinWH(obj.mask,C.w,C.h));
+    const ids=new Set([...Object.keys(C.bins).map(Number),...imported.keys()]);
+    for(const cid of ids){
+      const item=ensureCmpClass(cid,imported.has(cid)?response.j.objects.find(x=>+x.class_id===cid)?.name:classNameForId(cid));
+      const before=item[side].slice(0), after=imported.get(cid)||new Uint8Array(C.w*C.h);
+      if(before.some((value,index)=>value!==after[index])){ item[side]=after.slice(0); cmpMaskHistory(side,cid,before,after); }
+    }
+    for(const cid of ids) await refreshCmpLiveMetrics(cid);
+  }
+  C.refine.busy=false; buildCmpLayers(); renderCmpClasses(); cmpRender(); drawScores(); updateCmpRefineUI();
+  toast(`Imported ${sides.map(x=>x.toUpperCase()).join(' + ')} masks`,'ok'); return true;
+}
+function cmpMaskHistory(side,cid,before,after,historySide=side){
+  const draftKey=cmpDraftKey(side), draft=C.refine.drafts.get(draftKey);
+  let hadDraft=!!draft&&draft.has(cid), beforeDraft=hadDraft?draft.get(cid).slice(0):null;
+  let target=C.refine.drafts.get(draftKey); if(!target){ target=new Map(); C.refine.drafts.set(draftKey,target); }
+  target.set(cid,after.slice(0));
+  invalidateCmpPromptSeed(side,cid);
+  cmpStack('history',historySide).push({side,historySide,frame:C.frames[C.idx],cid,before:before.slice(0),after:after.slice(0),beforePoints:null,afterPoints:null,hadDraft,beforeDraft});
+  cmpStack('future',historySide).length=0;
+}
+async function applyCmpPostprocess(op){
+  const side=C.refine.side, cid=cmpClassId(side); if(!side||cid==null||C.refine.busy) return;
+  const item=C.bins[cid]; if(!item) return;
+  const before=item[side].slice(0);
+  const body={op,mask:binToPngB64WH(before,C.w,C.h),kernel:op==='gaussian'?S.gauss:S.morph,n:S.comp};
+  C.refine.busy=true; updateCmpRefineUI();
+  const response=await API.post('/api/postprocess',body); C.refine.busy=false;
+  if(!response.ok){ updateCmpRefineUI(); toast(response.j.detail||'postprocess failed','err'); return; }
+  const after=await pngB64ToBinWH(response.j.mask,C.w,C.h); item[side]=after; cmpMaskHistory(side,cid,before,after);
+  await refreshCmpLiveMetrics(cid); buildCmpLayers(); renderCmpClasses(); cmpRender(); drawScores(); updateCmpRefineUI(); toast(op+' applied','ok');
+}
+function paintCmpCircle(ix,iy,add){
+  const side=C.refine.side, cid=cmpClassId(side), item=cid==null?null:C.bins[cid]; if(!item) return;
+  const bin=item[side], r=Math.floor(C.refine.brushSize/2), {w,h}=C;
+  const x0=clampi(Math.floor(ix-r),0,w-1), x1=clampi(Math.ceil(ix+r),0,w-1);
+  const y0=clampi(Math.floor(iy-r),0,h-1), y1=clampi(Math.ceil(iy+r),0,h-1);
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){ const dx=x-ix,dy=y-iy; if(dx*dx+dy*dy<=r*r) bin[y*w+x]=add?1:0; }
+}
+function paintCmpLine(x0,y0,x1,y1,add){ const d=Math.max(1,Math.hypot(x1-x0,y1-y0)); const steps=Math.max(2,Math.round(d)); for(let i=0;i<steps;i++){ const t=i/(steps-1); paintCmpCircle(x0+t*(x1-x0),y0+t*(y1-y0),add); } }
+function scheduleCmpBrushRender(){
+  if(C.refine.brushRenderPending) return;
+  C.refine.brushRenderPending=true;
+  requestAnimationFrame(()=>{
+    C.refine.brushRenderPending=false;
+    if(!C.open||!C.data) return;
+    buildCmpLayers(); cmpRender();
+  });
+}
+function classNameForId(cid){
+  const base=cmpBaseClassId(cid);
+  return Object.entries(S.classMap).find(([,id])=>+id===+base)?.[0]||`class_${base}`;
+}
+function ensureCmpClass(cid,name=classNameForId(cid),baseClassId=cid){
+  cid=+cid;
+  if(C.bins[cid]) return C.bins[cid];
+  baseClassId=+baseClassId;
+  const siblings=C.data.classes.filter(x=>+(x.base_class_id??x.class_id)===baseClassId);
+  const meta={class_id:cid,base_class_id:baseClassId,class_name:name,instance_index:siblings.length+1,
+    dice:null,iou:null,hd:null,hd95:null,only_a:false,only_b:false};
+  C.data.classes.push(meta);
+  C.bins[cid]={a:new Uint8Array(C.w*C.h),b:new Uint8Array(C.w*C.h),baseClassId,color:classColorRGB(baseClassId),meta};
+  C.knownClasses.add(cid); C.visible.a.add(cid); C.visible.b.add(cid);
+  return C.bins[cid];
+}
+async function addCmpClass(cid,name){
+  if(!C.refine.side) return;
+  cid=+cid;
+  let instanceId=cid;
+  if(C.bins[instanceId]){
+    let suffix=2; instanceId=cid*1000+suffix;
+    while(C.bins[instanceId]){ suffix++; instanceId=cid*1000+suffix; }
+  }
+  const siblingCount=C.data.classes.filter(x=>+(x.base_class_id??x.class_id)===cid).length;
+  ensureCmpClass(instanceId, siblingCount?`${name} · ${siblingCount+1}`:name, cid);
+  selectCmpClass(instanceId); C.visible[C.refine.side].add(instanceId); C.solo=null;
+  buildCmpLayers(); renderCmpClasses(); cmpRender(); updateCmpRefineUI();
+  await refreshCmpLiveMetrics(instanceId);
+  renderCmpClasses(); drawScores(); updateCmpRefineUI();
+}
+function cycleCmpClass(dir){
+  if(!C.refine.side||!C.data?.classes.length) return;
+  const classes=[...C.data.classes].sort((a,b)=>a.class_name.localeCompare(b.class_name));
+  let i=classes.findIndex(x=>x.class_id===cmpClassId()); i=(i+dir+classes.length)%classes.length;
+  selectCmpClass(classes[i].class_id); C.visible[C.refine.side].add(classes[i].class_id); C.solo=null;
+  buildCmpLayers(); renderCmpClasses(); cmpRender(); updateCmpRefineUI();
+}
+function toggleCmpClassVisibility(side=C.refine.side,cid=cmpClassId(side)){
+  if(!side||cid==null) return;
+  if(C.visible[side].has(cid)) C.visible[side].delete(cid); else C.visible[side].add(cid);
+  C.solo=null; buildCmpLayers(); renderCmpClasses(); cmpRender();
+}
+function toggleCmpAllVisibility(side=C.refine.side){
+  const sides=side?[side]:['a','b'];
+  for(const s of sides){
+    const all=C.data.classes.length>0&&C.data.classes.every(cl=>C.visible[s].has(cl.class_id));
+    C.visible[s]=all?new Set():new Set(C.data.classes.map(cl=>cl.class_id));
+  }
+  C.solo=null; buildCmpLayers(); renderCmpClasses(); cmpRender();
+}
+async function deleteCmpClassMask(side,cid){
+  if(!C.bins[cid]||C.refine.busy) return;
+  const before=C.bins[cid][side].slice(0), after=new Uint8Array(C.w*C.h);
+  if(!before.some(Boolean)) return;
+  C.bins[cid][side]=after; cmpMaskHistory(side,cid,before,after,C.refine.side||side); await refreshCmpLiveMetrics(cid);
+  buildCmpLayers(); renderCmpClasses(); cmpRender(); drawScores(); updateCmpRefineUI();
+}
+async function deleteCmpClass(side,cid){
+  if(side==='all'){ await deleteCmpClassMask('a',cid); await deleteCmpClassMask('b',cid); }
+  else await deleteCmpClassMask(side,cid);
+  const item=C.bins[cid];
+  if(item&&!item.a.some(Boolean)&&!item.b.some(Boolean)){
+    C.data.classes=C.data.classes.filter(cl=>cl.class_id!==cid);
+    C.visible.a.delete(cid); C.visible.b.delete(cid); C.knownClasses.delete(cid);
+    if(cmpClassId()===cid) selectCmpClass(null);
+    renderCmpClasses(); buildCmpLayers(); cmpRender(); updateCmpRefineUI();
+  }
+}
+function runNextCmpRefinePoint(){
+  const next=C.refine.pendingPoints[0];
+  if(next) runCmpRefinePoint(next.point,next.side,next.cid,true);
+}
+async function runCmpRefinePoint(point,requestedSide=C.refine.side,requestedCid=cmpClassId(requestedSide),queued=false){
+  const side=requestedSide, cid=requestedCid;
+  if(cid==null||!side) return;
+  if(C.refine.busy){
+    C.refine.pendingPoints.push({point:{...point},side,cid,frame:C.frames[C.idx]});
+    cmpRender();
+    return;
+  }
+  const queuedItem=queued?C.refine.pendingPoints[0]:null;
+  if(queuedItem&&queuedItem.frame&&queuedItem.frame!==C.frames[C.idx]){
+    C.refine.pendingPoints.shift(); runNextCmpRefinePoint(); return;
+  }
+  const frameIdx=cmpFrameSourceIndex();
+  if(frameIdx<0){
+    if(queuedItem===C.refine.pendingPoints[0]) C.refine.pendingPoints.shift();
+    toast(`Frame ${C.frames[C.idx]} is not in the selected images folder`,'err');
+    runNextCmpRefinePoint();
+    return;
+  }
+  const key=cmpPromptKey(cid), points=C.refine.prompts.get(key)||[];
+  const seedKey=cmpPromptSeedKey(cid,side), hasSeed=C.refine.promptSeeds.has(seedKey);
+  const beforePoints=points.map(p=>({...p})); points.push(point); C.refine.prompts.set(key,points);
+  const target=C.bins[cid][side], before=target.slice(0);
+  const oldDraft=C.refine.drafts.get(cmpDraftKey(side));
+  const hadDraft=!!oldDraft&&oldDraft.has(cid), beforeDraft=hadDraft?oldDraft.get(cid).slice(0):null;
+  C.refine.busy=true; updateCmpRefineUI(); cmpRender();
+  // SAM2 keeps one prompt/logit state per object. Include frame in the id so
+  // switching frames cannot accidentally reuse another frame's decoder state.
+  const objId=cid*1000000+(C.idx+1)*100+(side==='a'?1:2);
+  const response=await API.post('/api/predict',{frame_idx:frameIdx,obj_id:objId,
+    // Match Annotation mode: resend the complete prompt set on every click.
+    // SAM2 clears the old point tensor and rebuilds it while retaining the
+    // previous mask logits, so positive/negative constraints stay consistent.
+    points:points.map(p=>[p.x,p.y]),labels:points.map(p=>p.label),box:null,
+    seed_mask:!hasSeed&&before.some(Boolean)?binToPngB64WH(before,C.w,C.h):null});
+  if(!response.ok){
+    C.refine.busy=false; C.refine.prompts.set(key,beforePoints);
+    if(queuedItem===C.refine.pendingPoints[0]) C.refine.pendingPoints.shift();
+    updateCmpRefineUI(); cmpRender(); toast(response.j.detail||'SAM2 refine failed','err'); runNextCmpRefinePoint(); return;
+  }
+  const after=await pngB64ToBinWH(response.j.mask,C.w,C.h), afterPoints=points.map(p=>({...p}));
+  if(!hasSeed&&before.some(Boolean)) C.refine.promptSeeds.set(seedKey,true);
+  C.bins[cid][side]=after;
+  let draft=C.refine.drafts.get(cmpDraftKey(side));
+  if(!draft){ draft=new Map(); C.refine.drafts.set(cmpDraftKey(side),draft); }
+  draft.set(cid,after.slice(0));
+  cmpStack('history',side).push({side,frame:C.frames[C.idx],cid,before,after:after.slice(0),beforePoints,afterPoints,hadDraft,beforeDraft});
+  cmpStack('future',side).length=0;
+  await refreshCmpLiveMetrics(cid);
+  C.refine.busy=false;
+  if(queuedItem===C.refine.pendingPoints[0]) C.refine.pendingPoints.shift();
+  buildCmpLayers(); renderCmpClasses(); cmpRender(); updateCmpRefineUI(); drawScores();
+  runNextCmpRefinePoint();
+}
+async function refreshCmpLiveMetrics(cid){
+  const item=C.bins[cid]; if(!item) return;
+  const base=cmpBaseClassId(cid);
+  const siblingEntries=Object.entries(C.bins).filter(([instanceId])=>cmpBaseClassId(instanceId)===base);
+  const union={a:new Uint8Array(C.w*C.h),b:new Uint8Array(C.w*C.h)};
+  for(const [,sibling] of siblingEntries){
+    for(let i=0;i<union.a.length;i++){ if(sibling.a[i]) union.a[i]=1; if(sibling.b[i]) union.b[i]=1; }
+  }
+  const response=await API.post('/api/review/live_metrics',{
+    mask_a:binToPngB64WH(union.a,C.w,C.h),mask_b:binToPngB64WH(union.b,C.w,C.h)});
+  if(!response.ok) return;
+  // Every button is an independent instance, but agreement belongs to the
+  // semantic class. Write the union metrics back to every instance record,
+  // including the records used directly by renderCmpClasses().
+  for(const [,sibling] of siblingEntries) Object.assign(sibling.meta,response.j);
+  for(const cl of C.data.classes){
+    if(+(cl.base_class_id??cl.class_id)===base) Object.assign(cl,response.j);
+  }
+  const baseClasses=[...new Set(C.data.classes.map(x=>+(x.base_class_id??x.class_id)))];
+  const vals=baseClasses.map(baseId=>
+    C.data.classes.find(x=>+(x.base_class_id??x.class_id)===baseId)?.dice).filter(x=>x!=null);
+  const score=C.scores.find(x=>x.frame===C.frames[C.idx]);
+  if(score) score.dice=vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10000)/10000:null;
+  updateReviewLiveRow(base,response.j,union.a.some(Boolean)!==union.b.some(Boolean));
+}
+function reviewMean(values){ values=values.filter(v=>v!=null); return values.length?Math.round(values.reduce((a,b)=>a+b,0)/values.length*10000)/10000:null; }
+function reviewAggLive(rows){
+  const metrics=['dice','iou','sen','hd','hd95'], groups=new Map();
+  for(const row of rows){ if(!groups.has(row.class_id)) groups.set(row.class_id,[]); groups.get(row.class_id).push(row); }
+  const per_class=[...groups].map(([cid,rs])=>{
+    const out={class_id:cid,class_name:rs[0].class_name,n:rs.length,n_hd:rs.filter(x=>x.hd!=null).length,n_cases:1,one_sided:rs.filter(x=>x.one_sided).length};
+    for(const m of metrics) out[m]=out[m+'_micro']=reviewMean(rs.map(x=>x[m])); return out;
+  });
+  const overall={}; for(const m of metrics) overall[m]=reviewMean(rows.map(x=>x[m]));
+  return {n:rows.length,per_class,per_case:[],overall,class_avg_unweighted:Object.fromEntries(metrics.map(m=>[m,reviewMean(per_class.map(x=>x[m]))])),class_avg_weighted:overall,case_avg_unweighted:null,case_avg_weighted:overall};
+}
+function updateReviewLiveRow(cid,metrics,oneSided){
+  if(!R.data||R.data.multi) return;
+  let row=R.data.rows.find(x=>x.frame===C.frames[C.idx]&&x.class_id===cid&&
+    ((x.ann_a===C.a&&x.ann_b===C.b)||(x.ann_a===C.b&&x.ann_b===C.a)));
+  const classItems=Object.entries(C.bins).filter(([instanceId])=>cmpBaseClassId(instanceId)===+cid).map(([,value])=>value);
+  const present=classItems.some(value=>value.a.some(Boolean)||value.b.some(Boolean));
+  if(row&&row._liveAdded&&!present){ R.data.rows.splice(R.data.rows.indexOf(row),1); row=null; }
+  if(!row&&present){
+    const cl=C.data.classes.find(x=>x.class_id===cid);
+    row={frame:C.frames[C.idx],class_id:cid,class_name:cl?.class_name||`class_${cid}`,
+      ann_a:C.a,ann_b:C.b,kind:C.a===C.b?'intra':'inter',one_sided:oneSided,...metrics,_liveAdded:true};
+    R.data.rows.push(row);
+  }
+  if(!row){ renderReview(); return; }
+  Object.assign(row,metrics,{one_sided:oneSided});
+  R.data.inter=reviewAggLive(R.data.rows.filter(x=>x.kind==='inter'));
+  R.data.intra=reviewAggLive(R.data.rows.filter(x=>x.kind==='intra'));
+  R.data.all=reviewAggLive(R.data.rows);
+  renderReview();
+}
+async function undoCmpRefine(){
+  if(!C.refine.side||C.refine.busy) return;
+  const history=cmpStack('history'), h=history.pop(); if(!h) return;
+  ensureCmpClass(h.cid); C.bins[h.cid][h.side]=h.before; if(h.beforePoints) C.refine.prompts.set(cmpPromptKey(h.cid,h.side,h.frame),h.beforePoints);
+  invalidateCmpPromptSeed(h.side,h.cid,h.frame);
+  let draft=C.refine.drafts.get(cmpDraftKey(h.side,h.frame)); if(!draft){ draft=new Map(); C.refine.drafts.set(cmpDraftKey(h.side,h.frame),draft); }
+  if(h.hadDraft) draft.set(h.cid,h.beforeDraft); else draft.delete(h.cid);
+  if(!draft.size) C.refine.drafts.delete(cmpDraftKey(h.side,h.frame));
+  cmpStack('future',h.historySide||C.refine.side,h.frame).push(h);
+  await refreshCmpLiveMetrics(h.cid); buildCmpLayers(); renderCmpClasses(); cmpRender(); drawScores(); updateCmpRefineUI();
+}
+async function redoCmpRefine(){
+  if(!C.refine.side||C.refine.busy) return;
+  const future=cmpStack('future'), h=future.pop(); if(!h) return;
+  C.bins[h.cid][h.side]=h.after.slice(0); if(h.afterPoints) C.refine.prompts.set(cmpPromptKey(h.cid,h.side,h.frame),h.afterPoints.map(p=>({...p})));
+  invalidateCmpPromptSeed(h.side,h.cid,h.frame);
+  let draft=C.refine.drafts.get(cmpDraftKey(h.side,h.frame)); if(!draft){ draft=new Map(); C.refine.drafts.set(cmpDraftKey(h.side,h.frame),draft); }
+  draft.set(h.cid,h.after.slice(0)); cmpStack('history',h.historySide||C.refine.side,h.frame).push(h);
+  await refreshCmpLiveMetrics(h.cid); buildCmpLayers(); renderCmpClasses(); cmpRender(); drawScores(); updateCmpRefineUI();
+}
+async function resetCmpRefine(){
+  if(!C.refine.side) return; const prefix=cmpDraftKey();
+  C.refine.drafts.delete(prefix); for(const key of [...C.refine.prompts.keys()]) if(key.startsWith(prefix+'\n')) C.refine.prompts.delete(key);
+  for(const key of [...C.refine.promptSeeds.keys()]) if(key.startsWith(prefix+'\n')) C.refine.promptSeeds.delete(key);
+  clearCmpStacks(); await loadCmpFrame(C.idx); updateCmpRefineUI();
+}
+async function resetCmpCurrentMask(){
+  const side=C.refine.side, cid=cmpClassId(side); if(!side||cid==null||C.refine.busy) return;
+  await deleteCmpClassMask(side,cid);
+  toast(`Reset ${side.toUpperCase()} mask for ${classNameForId(cid)}`,'ok');
+}
+async function saveCmpRefine(sides=null,opts={}){
+  if(!C.open||C.refine.busy) return false;
+  if(!sides){ sides=await chooseCmpSides('Save',cmpDirtySides()); if(!sides) return false; }
+  C.refine.busy=true; updateCmpRefineUI();
+  for(const side of sides){
+    let dir=sides.forcePaths?null:C.refine.io[side].saveDir;
+    if(!dir) dir=await browseCmpDir(side,'save');
+    if(!dir){ C.refine.busy=false; updateCmpRefineUI(); return false; }
+    const ann=cmpRefineAnn(side), objects=cmpSideBins(side).filter(x=>x.bin.some(Boolean)).map(x=>({class_id:x.class_id,mask:binToPngB64WH(x.bin,C.w,C.h)}));
+    const response=await API.post('/api/review/save_refine',{root:C.root,case:C.case,annotator:ann,frame:C.frames[C.idx],objects,mask_dir:dir});
+    if(!response.ok){ C.refine.busy=false; updateCmpRefineUI(); toast(`${side.toUpperCase()} save failed: ${response.j.detail||'unknown error'}`,'err'); return false; }
+    if(!response.j.yolo_ok){ C.refine.busy=false; updateCmpRefineUI(); toast(`${side.toUpperCase()} mask saved, but label failed: ${response.j.yolo_err||'unknown error'}`,'err'); return false; }
+    C.refine.drafts.delete(cmpDraftKey(side)); clearCmpStacks(side);
+  }
+  C.refine.busy=false;
+  for(const row of R.data?.rows||[]) if(row.frame===C.frames[C.idx]&&row.ann_a===C.a&&row.ann_b===C.b) delete row._liveAdded;
+  updateCmpRefineUI(); flashScreen(); toast(`Saved ${sides.map(side=>`${side.toUpperCase()} · ${cmpRefineAnn(side)}`).join(' + ')}: mask + label`,'ok');
+  return true;
+}
+
 async function openCompare(){
   if(!R.data){ toast('Compute agreement first'); return; }
+  if(V.open) closeContextVideo();
   C.root=R.data.root; C.case=R.data.case;
+  selectCmpClass(null);
+  // A new Review session must not inherit decoder logits or prompt seeds from
+  // an earlier session, even when it uses the same frames directory.
+  C.refine.readyDir=null; C.refine.prompts.clear(); C.refine.promptSeeds.clear();
   const withCase=R.scan.annotators.filter(a=>a.cases[C.case]).map(a=>a.id);
   const opts=withCase.map(id=>`<option>${id}</option>`).join('');
   $('cmpA').innerHTML=opts; $('cmpB').innerHTML=opts;
   const sel=R.data.annotators;
   C.a=sel[0]; C.b=sel[1]||withCase.find(x=>x!==sel[0])||sel[0];
   $('cmpA').value=C.a; $('cmpB').value=C.b;
-  $('compareModal').classList.remove('hidden'); C.open=true;
+  loadCmpIoPaths();
+  C.open=true; enterCompareWorkspace();
   // default frames folder for this case, so the background shows without extra steps
   C.framesDir = await resolveFramesDir(C.case, [C.a,C.b]);
   $('cmpFramesDir').value = C.framesDir; C.showFrame=true; $('cmpShowFrame').checked=true;
-  const card=$('compareModal').querySelector('.compare-card');
-  if(!card._dragInit){ makeDraggable(card, card.querySelector('.modal-head'));
-    new ResizeObserver(()=>{ if(C.open){ compareResize(); cmpRender(); drawScores(); } }).observe(card); card._dragInit=true; }
-  card._resetDrag && card._resetDrag();
+  const stage=$('cmpStage');
+  if(!stage._resizeInit){
+    new ResizeObserver(()=>{
+      if(C.open){ compareResize(); if(C.data&&C.mode!=='dual') fitCmp(); cmpRender(); drawScores(); }
+    }).observe(stage);
+    stage._resizeInit=true;
+  }
   compareResize();
   await reloadCmpFrames();
+  if(C.open&&C.frames.length) await startCmpRefine('a');
 }
 async function setCompareFramesDir(){
   C.framesDir=await resolveFramesDir(C.case,[C.a,C.b]);
@@ -2169,38 +2832,92 @@ async function setCompareFramesDir(){
 function makeDraggable(card, handle){
   let dx=0,dy=0,sx,sy,drag=false;
   handle.style.cursor='move';
-  handle.addEventListener('mousedown',e=>{ if(e.target.closest('button,select,input,label')) return; drag=true; sx=e.clientX-dx; sy=e.clientY-dy; e.preventDefault(); });
+  handle.addEventListener('mousedown',e=>{ if(document.body.classList.contains('review-compare')||e.target.closest('button,select,input,label')) return; drag=true; sx=e.clientX-dx; sy=e.clientY-dy; e.preventDefault(); });
   window.addEventListener('mousemove',e=>{ if(!drag) return; dx=e.clientX-sx; dy=e.clientY-sy; card.style.transform=`translate(${dx}px,${dy}px)`; });
   window.addEventListener('mouseup',()=>{ drag=false; });
   card._resetDrag=()=>{ dx=0; dy=0; card.style.transform=''; };
 }
 async function reloadCmpFrames(){
   if(C.a===C.b){ toast('Pick two different annotators','err'); return; }
+  C.visible={a:new Set(),b:new Set()}; C.knownClasses=new Set(); C.solo=null;
   const {ok,j}=await API.post('/api/review/frames',{root:C.root, case:C.case, ann_a:C.a, ann_b:C.b});
   if(!ok){ toast(j.detail||'no frames','err'); return; }
   C.frames=j.frames; C.idx=0;
   $('cmpSlider').max=Math.max(0,C.frames.length-1);
-  if(!C.frames.length){ toast('No frames shared by these two','err'); $('cmpClasses').innerHTML=''; cctx.clearRect(0,0,cmpCanvas.width,cmpCanvas.height); C.scores=[]; drawScores(); return; }
+  if(!C.frames.length){ toast('No frames shared by these two','err'); $('cmpClasses').innerHTML=''; if(document.body.classList.contains('review-compare')) $('objList').innerHTML=''; cctx.clearRect(0,0,cmpCanvas.width,cmpCanvas.height); C.scores=[]; drawScores(); return; }
   const sc=await API.post('/api/review/frame_scores',{root:C.root, case:C.case, ann_a:C.a, ann_b:C.b});
   C.scores = sc.ok? sc.j.scores : [];
-  loadCmpFrame(0);
+  await loadCmpFrame(0);
+}
+function currentLiveScore(){
+  if(!C.data?.classes?.length) return null;
+  const values=[];
+  for(const baseId of [...new Set(C.data.classes.map(x=>+(x.base_class_id??x.class_id)))]){
+    const cl=C.data.classes.find(x=>+(x.base_class_id??x.class_id)===baseId);
+    if(cl?.dice!=null) values.push(Number(cl.dice));
+  }
+  return values.length?values.reduce((sum,value)=>sum+value,0)/values.length:null;
+}
+function scoreSummary(){
+  const current=C.scores?.[C.idx];
+  const live=currentLiveScore();
+  if(current&&live!=null) current.dice=Math.round(live*10000)/10000;
+  const values=(C.scores||[]).filter(s=>s.dice!=null).map(s=>Number(s.dice)).filter(Number.isFinite);
+  const updatedMean=values.length?values.reduce((sum,value)=>sum+value,0)/values.length:null;
+  const below=values.filter(value=>value<C.scoreThreshold).length;
+  return {mean:updatedMean,below,valid:values.length};
+}
+async function refreshCmpScoresFromDisk(){
+  if(!C.open||!C.frames.length||C.scoreRefreshBusy) return;
+  C.scoreRefreshBusy=true; $('cmpScoreRefresh').disabled=true;
+  const currentFrame=C.frames[C.idx];
+  const liveScores=new Map((C.scores||[])
+    .filter(score=>cmpDirtySides(score.frame).length&&score.dice!=null)
+    .map(score=>[score.frame,score.dice]));
+  const response=await API.post('/api/review/frame_scores',{root:C.root,case:C.case,ann_a:C.a,ann_b:C.b});
+  if(response.ok){
+    C.scores=response.j.scores||[];
+    for(const score of C.scores) if(liveScores.has(score.frame)) score.dice=liveScores.get(score.frame);
+    const current=C.scores.find(score=>score.frame===currentFrame), live=currentLiveScore();
+    if(current&&live!=null) current.dice=Math.round(live*10000)/10000;
+    drawScores(); toast('Frame scores refreshed','ok');
+  }else toast(response.j?.detail||'Could not refresh frame scores','err');
+  C.scoreRefreshBusy=false; $('cmpScoreRefresh').disabled=false;
 }
 async function loadCmpFrame(i){
   if(!C.frames.length) return;
   C.idx=clampi(i,0,C.frames.length-1);
   const frame=C.frames[C.idx];
+  if(V.compare){ V.sourceFrames=C.frames; positionContextVideo(C.idx,false); }
   const {ok,j}=await API.post('/api/review/frame_compare',{root:C.root, case:C.case, ann_a:C.a, ann_b:C.b, frame});
   if(!ok){ toast(j.detail||'compare failed','err'); return; }
   C.data=j; C.w=j.width; C.h=j.height;
   // decode masks
   C.bins={};
   for(const cl of j.classes){
+    if(!C.knownClasses.has(cl.class_id)){ C.visible.a.add(cl.class_id); C.visible.b.add(cl.class_id); C.knownClasses.add(cl.class_id); }
     C.bins[cl.class_id]={
       a:await pngB64ToBinWH(cl.mask_a,C.w,C.h),
       b:await pngB64ToBinWH(cl.mask_b,C.w,C.h),
-      color:classColorRGB(cl.class_id), meta:cl };
+      baseClassId:cl.class_id, color:classColorRGB(cl.class_id), meta:{...cl,base_class_id:cl.class_id,instance_index:1} };
   }
-  if(C.visible.size===0 || C.solo===null){ C.visible=new Set(j.classes.map(c=>c.class_id)); }
+  for(const cl of j.classes){
+    const item=C.bins[cl.class_id];
+    updateReviewLiveRow(cl.class_id,{dice:cl.dice,iou:cl.iou,hd:cl.hd,hd95:cl.hd95},
+      item.a.some(Boolean)!==item.b.some(Boolean));
+  }
+  const savedVals=j.classes.map(x=>x.dice).filter(x=>x!=null);
+  const savedScore=C.scores.find(x=>x.frame===frame);
+  if(savedScore) savedScore.dice=savedVals.length?Math.round(savedVals.reduce((a,b)=>a+b,0)/savedVals.length*10000)/10000:null;
+  const liveClasses=new Set();
+  for(const side of ['a','b']){
+    const draft=C.refine.drafts.get(cmpDraftKey(side,frame));
+    if(!draft) continue;
+    for(const [cid,bin] of draft){ ensureCmpClass(cid); C.bins[cid][side]=bin.slice(0); liveClasses.add(cid); }
+  }
+  for(const cid of liveClasses) await refreshCmpLiveMetrics(cid);
+  if(C.refine.selectedClassId!=null&&!C.bins[C.refine.selectedClassId])
+    selectCmpClass(C.data.classes[0]?.class_id??null);
   // background image
   C.img=null;
   if(C.framesDir){
@@ -2208,6 +2925,7 @@ async function loadCmpFrame(i){
   }
   $('cmpSlider').value=C.idx; $('cmpPos').textContent=`${C.idx+1} / ${C.frames.length}`; $('cmpFrameName').textContent=frame;
   fitCmp(); buildCmpLayers(); renderCmpClasses(); cmpRender(); updateLegend(); drawScores();
+  updateCmpRefineUI();
 }
 // per-frame Dice line plot (color = spectrum), click a point to jump
 const scoresCanvas=$('cmpScores'); const sctx=scoresCanvas.getContext('2d');
@@ -2220,6 +2938,7 @@ function scoreLayout(){
   const availW=Math.max(10, W-padL-padR);
   const step = n<=1? 0 : Math.min(46, availW/(n-1));   // capped => denser for few frames
   const dv=(C.scores||[]).filter(s=>s.dice!=null).map(s=>s.dice);
+  if(Number.isFinite(C.scoreThreshold)) dv.push(C.scoreThreshold);
   let lo=dv.length?Math.min(...dv):0, hi=dv.length?Math.max(...dv):1;
   const pad=Math.max(0.02,(hi-lo)*0.15); lo=Math.max(0,lo-pad); hi=Math.min(1,hi+pad);
   if(hi-lo<0.04){ const c=(hi+lo)/2; lo=Math.max(0,c-0.02); hi=Math.min(1,c+0.02); }
@@ -2228,9 +2947,12 @@ function scoreLayout(){
 const scoreX=(i,L)=> L.padL + i*L.step;
 const scoreY=(d,L)=> (L.H-L.padB) - ((d-L.lo)/Math.max(1e-6,L.hi-L.lo))*(L.H-L.padT-L.padB);
 function drawScores(){
+  const summary=scoreSummary();
   const dp=window.devicePixelRatio||1; const L=scoreLayout(); const W=L.W,H=L.H;
   scoresCanvas.width=W*dp; scoresCanvas.height=H*dp; sctx.setTransform(dp,0,0,dp,0,0);
   sctx.clearRect(0,0,W,H);
+  $('cmpMeanDice').textContent=`mDice ${summary.mean==null?'—':summary.mean.toFixed(4)}`;
+  $('cmpScoreBelow').textContent=`${summary.below} below`;
   if(!L.n) return;
   // autoscaled y grid + labels (top = hi, bottom = lo)
   sctx.font='9px ui-monospace, monospace'; sctx.textAlign='right'; sctx.textBaseline='middle';
@@ -2238,13 +2960,18 @@ function drawScores(){
     sctx.strokeStyle='rgba(255,255,255,.06)'; sctx.lineWidth=1; sctx.beginPath(); sctx.moveTo(L.padL,yy); sctx.lineTo(W-L.padR,yy); sctx.stroke();
     sctx.fillStyle='#79828d'; sctx.fillText(v.toFixed(3), L.padL-6, yy);
   });
+  if(C.scoreThreshold>=L.lo&&C.scoreThreshold<=L.hi){
+    const ty=scoreY(C.scoreThreshold,L);
+    sctx.save(); sctx.strokeStyle='rgba(255,93,93,.65)'; sctx.lineWidth=1; sctx.setLineDash([4,3]);
+    sctx.beginPath(); sctx.moveTo(L.padL,ty); sctx.lineTo(W-L.padR,ty); sctx.stroke(); sctx.restore();
+  }
   // line
   sctx.strokeStyle='rgba(255,255,255,.25)'; sctx.lineWidth=1.5; sctx.beginPath(); let started=false;
   C.scores.forEach((s,i)=>{ if(s.dice==null) return; const px=scoreX(i,L),py=scoreY(s.dice,L); if(!started){sctx.moveTo(px,py);started=true;} else sctx.lineTo(px,py); });
   sctx.stroke();
   // dots (color = true dice, not the scaled axis)
   C.scores.forEach((s,i)=>{ const px=scoreX(i,L),py=scoreY(s.dice==null?L.lo:s.dice,L);
-    sctx.fillStyle = s.dice==null? '#555' : diceSpectrum(s.dice);
+    sctx.fillStyle = s.dice==null? '#555' : (s.dice<C.scoreThreshold?'#ff5d5d':diceSpectrum(s.dice));
     const r = i===C.idx?5 : (i===C.scoreHover?5:3.5);
     sctx.beginPath(); sctx.arc(px,py,r,0,Math.PI*2); sctx.fill();
     if(i===C.idx){ sctx.strokeStyle='#fff'; sctx.lineWidth=1.5; sctx.stroke(); }
@@ -2267,7 +2994,8 @@ function nearestScore(e){
   let best=0,bd=1e9; for(let i=0;i<L.n;i++){ const d=Math.abs(scoreX(i,L)-mx); if(d<bd){bd=d;best=i;} }
   return best;
 }
-scoresCanvas.addEventListener('click',e=>{ const i=nearestScore(e); if(i>=0) loadCmpFrame(i); });
+scoresCanvas.addEventListener('click',async e=>{ const i=nearestScore(e); if(i>=0) await requestCmpFrame(i); });
+scoresCanvas.addEventListener('contextmenu',e=>{ e.preventDefault(); const i=nearestScore(e); if(i>=0) openCompareVideo(i,true); });
 scoresCanvas.addEventListener('mousemove',e=>{ const i=nearestScore(e); if(i!==C.scoreHover){ C.scoreHover=i; drawScores(); } });
 scoresCanvas.addEventListener('mouseleave',()=>{ if(C.scoreHover!=null){ C.scoreHover=null; drawScores(); } });
 
@@ -2275,28 +3003,34 @@ scoresCanvas.addEventListener('mouseleave',()=>{ if(C.scoreHover!=null){ C.score
 function pngB64ToBinWH(b64,w,h){
   return new Promise(res=>{ const im=new Image(); im.onload=()=>{ const c=document.createElement('canvas'); c.width=w;c.height=h; const cx=c.getContext('2d'); cx.drawImage(im,0,0,w,h); const d=cx.getImageData(0,0,w,h).data; const bin=new Uint8Array(w*h); for(let i=0,p=0;i<bin.length;i++,p+=4) bin[i]=d[p]>127?1:0; res(bin); }; im.src='data:image/png;base64,'+b64; });
 }
-function visClasses(){ return Object.keys(C.bins).map(Number).filter(cid=> C.solo!=null? cid===C.solo : C.visible.has(cid)); }
+function visClasses(side){ return Object.keys(C.bins).map(Number).filter(cid=>C.solo!=null?cid===C.solo:C.visible[side].has(cid)); }
 
 function mkLayer(paint){ const c=document.createElement('canvas'); c.width=C.w; c.height=C.h; const cx=c.getContext('2d'); const im=cx.createImageData(C.w,C.h); paint(im.data); cx.putImageData(im,0,0); return c; }
 function paintFill(d,bin,color,alpha){ for(let i=0,p=0;i<bin.length;i++,p+=4){ if(bin[i]){ d[p]=color[0]; d[p+1]=color[1]; d[p+2]=color[2]; d[p+3]=alpha; } } }
-function paintBoundary(d,bin,color){ const w=C.w,h=C.h; for(let y=0;y<h;y++)for(let x=0;x<w;x++){ const i=y*w+x; if(!bin[i])continue; if(x===0||y===0||x===w-1||y===h-1||!bin[i-1]||!bin[i+1]||!bin[i-w]||!bin[i+w]){ const p=i*4; d[p]=color[0];d[p+1]=color[1];d[p+2]=color[2];d[p+3]=255; } } }
+function paintBoundary(d,bin,color){ const w=C.w,h=C.h; for(let y=0;y<h;y++)for(let x=0;x<w;x++){ const i=y*w+x; if(!bin[i])continue; if(x===0||y===0||x===w-1||y===h-1||!bin[i-1]||!bin[i+1]||!bin[i-w]||!bin[i+w]){ const p=i*4; d[p]=color[0];d[p+1]=color[1];d[p+2]=color[2];d[p+3]=240; } } }
+function paintAnnotationMask(d,bin,color,fillAlpha=115){ paintFill(d,bin,color,fillAlpha); paintBoundary(d,bin,color); }
 function buildCmpLayers(){
   if(!C.data) return;
-  const vis=visClasses();
+  const visA=visClasses('a'), visB=visClasses('b'), setA=new Set(visA), setB=new Set(visB);
   if(C.mode==='diff'){
-    C.layer=mkLayer(d=>{ for(const cid of vis){ const {a,b}=C.bins[cid]; for(let i=0,p=0;i<a.length;i++,p+=4){ const A=a[i],B=b[i]; if(A&&B){ d[p]=CMP_AGREE[0];d[p+1]=CMP_AGREE[1];d[p+2]=CMP_AGREE[2];d[p+3]=150; } else if(A){ d[p]=CMP_AONLY[0];d[p+1]=CMP_AONLY[1];d[p+2]=CMP_AONLY[2];d[p+3]=170; } else if(B){ d[p]=CMP_BONLY[0];d[p+1]=CMP_BONLY[1];d[p+2]=CMP_BONLY[2];d[p+3]=170; } } } });
+    const first=cmpDisplaySide(0), firstOnly=CMP_AONLY, secondOnly=CMP_BONLY;
+    C.layer=mkLayer(d=>{ for(const cid of new Set([...visA,...visB])){ const {a,b}=C.bins[cid]; for(let i=0,p=0;i<a.length;i++,p+=4){ const A=setA.has(cid)&&a[i],B=setB.has(cid)&&b[i], firstHit=first==='a'?A:B, secondHit=first==='a'?B:A; if(A&&B){ d[p]=CMP_AGREE[0];d[p+1]=CMP_AGREE[1];d[p+2]=CMP_AGREE[2];d[p+3]=150; } else if(firstHit){ d[p]=firstOnly[0];d[p+1]=firstOnly[1];d[p+2]=firstOnly[2];d[p+3]=170; } else if(secondHit){ d[p]=secondOnly[0];d[p+1]=secondOnly[1];d[p+2]=secondOnly[2];d[p+3]=170; } } } });
   } else if(C.mode==='overlay'){
-    C.layer=mkLayer(d=>{ for(const cid of vis){ const {a,color}=C.bins[cid]; paintFill(d,a,color,90); } for(const cid of vis){ const {b,color}=C.bins[cid]; paintBoundary(d,b,[255,255,255]); paintBoundary(d,C.bins[cid].a,color); } });
+    const front=cmpDisplaySide(0), back=cmpDisplaySide(1);
+    C.layer=mkLayer(d=>{
+      for(const cid of visClasses(front)){ const bin=C.bins[cid][front]; paintAnnotationMask(d,bin,C.bins[cid].color,115); }
+      for(const cid of visClasses(back)){ const bin=C.bins[cid][back]; paintBoundary(d,bin,C.bins[cid].color); }
+    });
   } else { // dual
-    C.layerA=mkLayer(d=>{ for(const cid of vis){ const {a,color}=C.bins[cid]; paintFill(d,a,color,110); paintBoundary(d,a,color); } });
-    C.layerB=mkLayer(d=>{ for(const cid of vis){ const {b,color}=C.bins[cid]; paintFill(d,b,color,110); paintBoundary(d,b,color); } });
+    C.layerA=mkLayer(d=>{ for(const cid of visA){ const {a,color}=C.bins[cid]; paintAnnotationMask(d,a,color,115); } });
+    C.layerB=mkLayer(d=>{ for(const cid of visB){ const {b,color}=C.bins[cid]; paintAnnotationMask(d,b,color,115); } });
   }
 }
 function updateLegend(){
   const L=$('cmpLegend');
-  if(C.mode==='diff'){ L.innerHTML=`<span class="lg"><span class="sw" style="background:rgb(${CMP_AGREE})"></span>agree</span><span class="lg"><span class="sw" style="background:rgb(${CMP_AONLY})"></span>${C.a} only</span><span class="lg"><span class="sw" style="background:rgb(${CMP_BONLY})"></span>${C.b} only</span>`; }
-  else if(C.mode==='overlay'){ L.innerHTML=`<span class="lg">fill = <b>${C.a}</b> · white outline = <b>${C.b}</b></span>`; }
-  else { L.innerHTML=`<span class="lg">left = <b>${C.a}</b> · right = <b>${C.b}</b></span>`; }
+  if(C.mode==='diff'){ L.innerHTML=`<span class="lg"><span class="sw" style="background:rgb(${CMP_AGREE})"></span>agree</span><span class="lg"><span class="sw" style="background:rgb(${CMP_AONLY})"></span>${cmpRefineAnn(cmpDisplaySide(0))} only</span><span class="lg"><span class="sw" style="background:rgb(${CMP_BONLY})"></span>${cmpRefineAnn(cmpDisplaySide(1))} only</span>`; }
+  else if(C.mode==='overlay'){ L.innerHTML=`<span class="lg">fill = <b>${cmpRefineAnn(cmpDisplaySide(0))}</b> · outline = <b>${cmpRefineAnn(cmpDisplaySide(1))}</b> · Annotation class colors</span>`; }
+  else { L.innerHTML=`<span class="lg">left = <b>${cmpRefineAnn(cmpDisplaySide(0))}</b> · right = <b>${cmpRefineAnn(cmpDisplaySide(1))}</b></span>`; }
 }
 function compareResize(){
   const st=$('cmpStage'); const dp=window.devicePixelRatio||1;
@@ -2309,36 +3043,66 @@ function fitCmp(){
 }
 function cmpRender(){
   const st=$('cmpStage'); const vw=st.clientWidth, vh=st.clientHeight;
-  cctx.clearRect(0,0,vw,vh);
+  // Mode switches can change the stage dimensions (especially embedded Review).
+  // Clear in device pixels so no previous Overlay frame can remain below Dual.
+  cctx.save(); cctx.setTransform(1,0,0,1,0,0); cctx.clearRect(0,0,cmpCanvas.width,cmpCanvas.height); cctx.restore();
   if(!C.data) return;
   if(C.mode==='dual'){
     const hw=vw/2;
-    drawPanel(0,hw,vh,C.layerA,C.a); drawPanel(hw,hw,vh,C.layerB,C.b);
+    const left=cmpDisplaySide(0), right=cmpDisplaySide(1);
+    drawPanel(0,hw,vh,left==='a'?C.layerA:C.layerB,cmpRefineAnn(left),left);
+    drawPanel(hw,hw,vh,right==='a'?C.layerA:C.layerB,cmpRefineAnn(right),right);
     cctx.strokeStyle='#232a31'; cctx.lineWidth=1; cctx.beginPath(); cctx.moveTo(hw,0); cctx.lineTo(hw,vh); cctx.stroke();
+    drawCmpRefinePoints();
+    drawCmpFlash();
+    drawCmpBrushCursor();
     return;
   }
   cctx.save(); cctx.translate(C.view.panX,C.view.panY); cctx.scale(C.view.scale,C.view.scale);
   const showImg = C.showFrame && C.img;
   if(showImg){ cctx.imageSmoothingEnabled=true; cctx.drawImage(C.img,0,0,C.w,C.h); }
-  cctx.imageSmoothingEnabled=false; cctx.globalAlpha = showImg? 0.55 : 1;
+  cctx.imageSmoothingEnabled=false; cctx.globalAlpha = 1;
   if(C.layer) cctx.drawImage(C.layer,0,0,C.w,C.h);
-  cctx.globalAlpha=1; cctx.restore();
+  cctx.globalAlpha=1; cctx.restore(); drawCmpRefinePoints();
+  drawCmpFlash();
+  drawCmpBrushCursor();
 }
-function drawPanel(x0,pw,vh,layer,label){
+function drawCmpFlash(){
+  const f=C.refine.flash; if(!f||!C.bins[f.cid]) return;
+  const t=(performance.now()-f.start)/(f.dur||500); if(t>=1) return;
+  cctx.save(); cctx.globalAlpha=.25+.6*Math.sin(t*Math.PI);
+  for(const side of f.sides||[C.refine.side||'a']){
+    const flashLayer=mkLayer(d=>paintFill(d,C.bins[f.cid][side],[255,255,255],170));
+    if(C.mode==='dual'){
+      const g=cmpDualGeometry(side);
+      cctx.drawImage(flashLayer,g.ox,g.oy,C.w*g.scale,C.h*g.scale);
+    }else{
+      cctx.save(); cctx.translate(C.view.panX,C.view.panY); cctx.scale(C.view.scale,C.view.scale);
+      cctx.drawImage(flashLayer,0,0,C.w,C.h); cctx.restore();
+    }
+  }
+  cctx.restore(); requestAnimationFrame(()=>{ if(C.refine.flash===f) cmpRender(); });
+}
+function drawPanel(x0,pw,vh,layer,label,side){
   const s=Math.min((pw-14)/C.w,(vh-24)/C.h); const iw=C.w*s, ih=C.h*s; const ox=x0+(pw-iw)/2, oy=(vh-ih)/2;
   cctx.save(); cctx.beginPath(); cctx.rect(x0,0,pw,vh); cctx.clip();
   const showImg = C.showFrame && C.img;
   if(showImg){ cctx.imageSmoothingEnabled=true; cctx.drawImage(C.img,ox,oy,iw,ih); }
-  cctx.imageSmoothingEnabled=false; cctx.globalAlpha = showImg? 0.55 : 1;
+  cctx.imageSmoothingEnabled=false; cctx.globalAlpha = 1;
   if(layer) cctx.drawImage(layer,ox,oy,iw,ih);
   cctx.globalAlpha=1;
-  cctx.fillStyle='rgba(10,12,15,.75)'; cctx.fillRect(x0+8,8,10+label.length*7,18);
-  cctx.fillStyle='#dbe1e8'; cctx.font='600 11px Inter, system-ui'; cctx.textAlign='left'; cctx.fillText(label,x0+13,21);
+  const active=C.refine.side===side;
+  cctx.fillStyle=active?'rgba(31,143,102,.88)':'rgba(10,12,15,.75)'; cctx.fillRect(x0+8,8,10+label.length*7,18);
+  cctx.fillStyle=active?'#d8ffef':'#dbe1e8'; cctx.font='600 11px Inter, system-ui'; cctx.textAlign='left'; cctx.fillText(label,x0+13,21);
+  if(active){ cctx.strokeStyle='#37e5a0'; cctx.lineWidth=3; cctx.strokeRect(x0+1.5,1.5,pw-3,vh-3); }
   cctx.restore();
 }
 function renderCmpClasses(){
-  const box=$('cmpClasses'); box.innerHTML='';
-  $('cmpAll').checked = C.solo==null && C.data.classes.length>0 && C.data.classes.every(c=>C.visible.has(c.class_id));
+  const embedded=document.body.classList.contains('review-compare');
+  const box=embedded?$('objList'):$('cmpClasses'); box.innerHTML='';
+  if(embedded) $('cmpClasses').innerHTML='';
+  const checkSides=C.refine.side?[C.refine.side]:['a','b'];
+  $('cmpAll').checked=C.solo==null&&C.data.classes.length>0&&checkSides.every(side=>C.data.classes.every(c=>C.visible[side].has(c.class_id)));
   const k=C.classSort.key, dir=C.classSort.dir;
   const cls=[...C.data.classes].sort((a,b)=>{
     if(k==='class_name') return dir*a.class_name.localeCompare(b.class_name);
@@ -2347,17 +3111,89 @@ function renderCmpClasses(){
     return dir*(av-bv);
   });
   for(const cl of cls){
-    const on = C.solo!=null? C.solo===cl.class_id : C.visible.has(cl.class_id);
-    const el=document.createElement('div'); el.className='cmp-crow'+(C.solo===cl.class_id?' solo':'');
-    el.style.opacity = on? '1':'.4';
-    const flag = cl.only_a? ` <span class="flag">${C.a}-only</span>` : cl.only_b? ` <span class="flag">${C.b}-only</span>`:'';
-    el.innerHTML=`<span class="obj-dot" style="background:rgb(${classColorRGB(cl.class_id)})"></span>
-      <span class="cname">${cl.class_name}${flag}</span>
-      <span class="cmet">D ${fmtn(cl.dice)}<br>IoU ${fmtn(cl.iou)}${cl.hd95!=null?'<br>HD95 '+cl.hd95:''}</span>`;
-    el.addEventListener('click',()=>{ if(C.visible.has(cl.class_id)) C.visible.delete(cl.class_id); else C.visible.add(cl.class_id); C.solo=null; buildCmpLayers(); cmpRender(); renderCmpClasses(); });
-    el.addEventListener('dblclick',()=>{ C.solo = C.solo===cl.class_id? null : cl.class_id; buildCmpLayers(); cmpRender(); renderCmpClasses(); });
+    const onA=C.solo!=null?C.solo===cl.class_id:C.visible.a.has(cl.class_id);
+    const onB=C.solo!=null?C.solo===cl.class_id:C.visible.b.has(cl.class_id);
+    const item=C.bins[cl.class_id], hasA=!!item&&item.a.some(Boolean), hasB=!!item&&item.b.some(Boolean);
+    const el=document.createElement('div'); el.dataset.cid=cl.class_id; el.className='cmp-crow'+(C.solo===cl.class_id?' solo':'')+(C.refine.side&&cmpClassId()===cl.class_id?' refine-active':'');
+    const only=hasA&&!hasB?'A Only':hasB&&!hasA?'B Only':'';
+    const maskBar=side=>`<div class="cmp-mask-bar${(side==='a'?onA:onB)?' on':''}${(side==='a'?hasA:hasB)?'':' empty'}" data-side="${side}" title="Toggle ${side.toUpperCase()} mask" role="button" tabindex="0"><span class="cmp-mask-side">${side.toUpperCase()}</span><span class="cmp-mask-name">${side==='a'?C.a:C.b}</span><button class="cmp-mask-delete" data-del="${side}" title="Delete ${side.toUpperCase()} mask">X</button></div>`;
+    el.innerHTML=`<div class="cmp-class-head"><span class="obj-dot" style="background:rgb(${classColorRGB(cl.class_id)})"></span><span class="cname">${cl.class_name}</span></div>
+      <div class="cmp-metrics"><span>Dice <b>${fmtn(cl.dice)}</b></span><span>SEN <b>${fmtn(cl.sen)}</b></span><span>HD <b>${fmtn(cl.hd)}</b></span></div>
+      <div class="cmp-mask-bars">
+        ${maskBar(cmpDisplaySide(0))}${maskBar(cmpDisplaySide(1))}
+      </div>${only?`<div class="cmp-only">${only}</div>`:''}`;
+    el.querySelectorAll('.cmp-mask-bar').forEach(btn=>btn.addEventListener('click',e=>{
+      e.stopPropagation(); if(e.target.closest('.cmp-mask-delete')) return;
+      clearTimeout(btn._toggleTimer);
+      if(e.detail===1) btn._toggleTimer=setTimeout(()=>toggleCmpClassVisibility(btn.dataset.side,cl.class_id),220);
+    }));
+    el.querySelectorAll('.cmp-mask-delete').forEach(btn=>btn.addEventListener('click',e=>{ e.stopPropagation(); deleteCmpClass(btn.dataset.del,cl.class_id); }));
+    el.addEventListener('click',()=>{
+      if(C.refine.side){
+        selectCmpClass(cl.class_id); C.solo=null;
+        box.querySelectorAll('.cmp-crow').forEach(row=>row.classList.toggle('refine-active',+row.dataset.cid===cl.class_id));
+        updateCmpRefineUI(); cmpRender(); return;
+      }
+      const hide=onA||onB; for(const side of ['a','b']) hide?C.visible[side].delete(cl.class_id):C.visible[side].add(cl.class_id);
+      C.solo=null; buildCmpLayers(); cmpRender(); renderCmpClasses(); });
+    el.addEventListener('dblclick',e=>{
+      if(C.refine.side){
+        const maskBar=e.target.closest('.cmp-mask-bar');
+        if(maskBar){ clearTimeout(maskBar._toggleTimer); return; }
+        clearTimeout(el._selectTimer);
+        selectCmpClass(cl.class_id);
+        C.refine.flash={cid:cl.class_id,sides:maskBar?[maskBar.dataset.side]:['a','b'],start:performance.now(),dur:500};
+        updateCmpRefineUI(); cmpRender();
+        setTimeout(()=>{ if(C.refine.flash?.cid===cl.class_id){ C.refine.flash=null; cmpRender(); } },500); return;
+      }
+      C.solo = C.solo===cl.class_id? null : cl.class_id; buildCmpLayers(); cmpRender(); renderCmpClasses();
+    });
     box.appendChild(el);
   }
+}
+function cmpRefinePointPosition(x,y){
+  if(C.mode!=='dual') return [C.view.panX+x*C.view.scale,C.view.panY+y*C.view.scale];
+  const g=cmpDualGeometry(C.refine.side); return [g.ox+x*g.scale,g.oy+y*g.scale];
+}
+function cmpDualGeometry(side=C.refine.side){
+  const st=$('cmpStage'), vw=st.clientWidth, vh=st.clientHeight, pw=vw/2;
+  const x0=cmpDisplayPosition(side)===0?0:pw, scale=Math.min((pw-14)/C.w,(vh-24)/C.h);
+  return {x0,pw,scale,ox:x0+(pw-C.w*scale)/2,oy:(vh-C.h*scale)/2};
+}
+function drawCmpRefinePoints(){
+  const cid=cmpClassId(); if(!C.refine.side||cid==null) return;
+  const points=C.refine.prompts.get(cmpPromptKey(cid))||[];
+  const pending=C.refine.pendingPoints
+    .filter(item=>item.side===C.refine.side&&item.cid===cid&&(!item.frame||item.frame===C.frames[C.idx]))
+    .map(item=>item.point);
+  for(const point of [...points,...pending]){
+    const [x,y]=cmpRefinePointPosition(point.x,point.y); cctx.lineWidth=2.5;
+    cctx.strokeStyle=point.label===1?'#37e5a0':'#ff5d5d'; cctx.beginPath();
+    if(point.label===1){ cctx.moveTo(x-6,y);cctx.lineTo(x+6,y);cctx.moveTo(x,y-6);cctx.lineTo(x,y+6); }
+    else { cctx.moveTo(x-6,y);cctx.lineTo(x+6,y); }
+    cctx.stroke();
+  }
+}
+function drawCmpBrushCursor(){
+  const point=C.refine.brushCursor;
+  if(!C.refine.side||!C.refine.brush||!point) return;
+  const [x,y]=cmpRefinePointPosition(point.x,point.y);
+  const scale=C.mode==='dual'?cmpDualGeometry(C.refine.side).scale:C.view.scale;
+  const radius=Math.max(2,(C.refine.brushSize/2)*scale);
+  cctx.save(); cctx.beginPath(); cctx.arc(x,y,radius,0,Math.PI*2);
+  cctx.fillStyle='rgba(255,255,0,.08)'; cctx.fill();
+  cctx.strokeStyle='rgba(255,255,0,.95)'; cctx.lineWidth=1.25; cctx.stroke(); cctx.restore();
+}
+function cmpImagePoint(e){
+  const st=$('cmpStage'), rect=st.getBoundingClientRect();
+  const sx=(e.clientX-rect.left)*(st.clientWidth/Math.max(1,rect.width));
+  const sy=(e.clientY-rect.top)*(st.clientHeight/Math.max(1,rect.height));
+  let x,y;
+  if(C.mode==='dual'){
+    const g=cmpDualGeometry(C.refine.side); if(sx<g.x0||sx>=g.x0+g.pw) return null;
+    x=(sx-g.ox)/g.scale; y=(sy-g.oy)/g.scale;
+  }else{ x=(sx-C.view.panX)/C.view.scale; y=(sy-C.view.panY)/C.view.scale; }
+  return x>=0&&y>=0&&x<C.w&&y<C.h?{x,y}:null;
 }
 // zoom/pan for overlay & diff
 cmpCanvas.addEventListener('wheel',e=>{ if(C.mode==='dual'||!C.data) return; e.preventDefault();
@@ -2365,9 +3201,30 @@ cmpCanvas.addEventListener('wheel',e=>{ if(C.mode==='dual'||!C.data) return; e.p
   if(e.ctrlKey||e.metaKey){ const f=Math.exp(-e.deltaY*0.0015); const ix=(cx-C.view.panX)/C.view.scale, iy=(cy-C.view.panY)/C.view.scale;
     C.view.scale=clampi(C.view.scale*f,0.1,8); C.view.panX=cx-ix*C.view.scale; C.view.panY=cy-iy*C.view.scale; cmpRender(); }
   else { C.view.panY-=e.deltaY; C.view.panX-=e.deltaX; cmpRender(); } },{passive:false});
-cmpCanvas.addEventListener('mousedown',e=>{ if(C.mode==='dual') return; C.panning=true; const r=cmpCanvas.getBoundingClientRect(); C.panStart=[e.clientX-r.left,e.clientY-r.top,C.view.panX,C.view.panY]; cmpCanvas.style.cursor='grabbing'; });
-window.addEventListener('mousemove',e=>{ if(!C.panning) return; const r=cmpCanvas.getBoundingClientRect(); C.view.panX=C.panStart[2]+(e.clientX-r.left-C.panStart[0]); C.view.panY=C.panStart[3]+(e.clientY-r.top-C.panStart[1]); cmpRender(); });
-window.addEventListener('mouseup',()=>{ if(C.panning){ C.panning=false; cmpCanvas.style.cursor='grab'; } });
+cmpCanvas.addEventListener('contextmenu',e=>e.preventDefault());
+cmpCanvas.addEventListener('mousedown',e=>{
+  if(C.refine.side&&C.refine.brush&&e.button!==1){
+    const point=cmpImagePoint(e); if(point){ const cid=cmpClassId(), side=C.refine.side; C.refine.brushCursor=point; C.refine.brushBefore=cid!=null&&C.bins[cid]?C.bins[cid][side].slice(0):null; C.refine.brushing=true; C.refine.brushPositive=e.button===0; C.refine.brushLast=[point.x,point.y]; paintCmpCircle(point.x,point.y,C.refine.brushPositive); scheduleCmpBrushRender(); }
+    return;
+  }
+  if(C.refine.side&&e.button!==1){ const point=cmpImagePoint(e); if(point){ e.preventDefault(); runCmpRefinePoint({...point,label:e.button===2?0:1}); } return; }
+  if(C.mode==='dual') return; C.panning=true; const r=cmpCanvas.getBoundingClientRect(); C.panStart=[e.clientX-r.left,e.clientY-r.top,C.view.panX,C.view.panY]; cmpCanvas.style.cursor='grabbing'; });
+window.addEventListener('mousemove',e=>{
+  if(C.open&&C.refine.side&&C.refine.brush){
+    const point=cmpImagePoint(e); C.refine.brushCursor=point;
+    if(C.refine.brushing&&point){ const last=C.refine.brushLast||[point.x,point.y]; paintCmpLine(last[0],last[1],point.x,point.y,C.refine.brushPositive); C.refine.brushLast=[point.x,point.y]; scheduleCmpBrushRender(); }
+    else cmpRender();
+    if(C.refine.brushing) return;
+  }
+  if(!C.panning) return; const r=cmpCanvas.getBoundingClientRect(); C.view.panX=C.panStart[2]+(e.clientX-r.left-C.panStart[0]); C.view.panY=C.panStart[3]+(e.clientY-r.top-C.panStart[1]); cmpRender();
+});
+window.addEventListener('mouseup',()=>{
+  if(C.refine.brushing){
+    C.refine.brushing=false; C.refine.brushLast=null;
+    const cid=cmpClassId(), side=C.refine.side; if(cid!=null&&side){ const item=C.bins[cid], after=item[side].slice(0), before=C.refine.brushBefore||after.slice(0); cmpMaskHistory(side,cid,before,after); C.refine.brushBefore=null; refreshCmpLiveMetrics(cid).then(()=>{ buildCmpLayers(); renderCmpClasses(); cmpRender(); drawScores(); updateCmpRefineUI(); }); }
+  }
+  if(C.panning){ C.panning=false; syncCmpCursor(); }
+});
 window.addEventListener('resize',()=>{ if(C.open){ compareResize(); cmpRender(); } });
 
 // -- import mask / prompts (folder browser, defaults to the configured path) --
@@ -2482,7 +3339,10 @@ async function doImportPrompts(dir){
 }
 
 // -- save --
-$('saveBtn').addEventListener('click', saveMasks);
+$('saveBtn').addEventListener('click',()=>{
+  if(C.open){ if(C.refine.side) saveCmpRefine(); else toast('Select Refine A or Refine B first'); return; }
+  saveMasks();
+});
 $('exportSamRaw').addEventListener('change', async e=>{
   if(!e.target.checked){
     const okd=await uiConfirm('SAM-raw masks will no longer be saved to the _sam folder. This removes the SAM-vs-human comparison data. Continue?', {title:'Disable SAM-raw saving', okText:'Disable', danger:true});
@@ -2626,14 +3486,39 @@ window.addEventListener('keydown',(e)=>{
     e.preventDefault(); openContextAnnotation(); return;
   }
   if(e.code==='Space'){ S.spaceDown=true; if(!S.brushing&&!S.dragBox) canvas.style.cursor='grab'; }
+  const plainKey=!(e.ctrlKey||e.metaKey||e.altKey);
+  const sizeKey=e.key.toLowerCase();
+  if(plainKey&&(sizeKey==='x'||sizeKey==='c')&&adjustActiveBrushSize(sizeKey==='x'?-2:2)){
+    e.preventDefault(); return;
+  }
   const tag=document.activeElement.tagName;
   if(tag==='INPUT'||tag==='TEXTAREA') return;
   // when the Compare window is open, A/D drive its frames
   if(C.open){
     const k=e.key.toLowerCase();
-    if(k==='a'){ loadCmpFrame(C.idx-1); e.preventDefault(); return; }
-    if(k==='d'){ loadCmpFrame(C.idx+1); e.preventDefault(); return; }
-    if(e.key==='Escape'){ $('compareModal').classList.add('hidden'); C.open=false; return; }
+    if((e.ctrlKey||e.metaKey)&&k==='s'){ e.preventDefault(); saveCmpRefine(); return; }
+    if((e.ctrlKey||e.metaKey)&&k==='z'){ e.preventDefault(); undoCmpRefine(); return; }
+    if((e.ctrlKey||e.metaKey)&&k==='y'){ e.preventDefault(); redoCmpRefine(); return; }
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&e.code==='Digit1'){ e.preventDefault(); startCmpRefine('a'); return; }
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&e.code==='Digit2'){ e.preventDefault(); startCmpRefine('b'); return; }
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&k==='b'){ e.preventDefault(); $('brushBtn').click(); return; }
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&k==='g'){ e.preventDefault(); applyPP('gaussian'); return; }
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&k==='f'){ e.preventDefault(); applyPP('morph'); return; }
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&k==='h'){ e.preventDefault(); applyPP('components'); return; }
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&(k==='q'||e.code==='Digit0')){ e.preventDefault(); importCmpMasks(); return; }
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&k==='r'){ e.preventDefault(); resetCmpCurrentMask(); return; }
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&k==='p'){ e.preventDefault(); openContextVideo(S.idx,true); return; }
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&k==='['){ e.preventDefault(); togglePanel('left'); return; }
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&k===']'){ e.preventDefault(); togglePanel('right'); return; }
+    if(!(e.ctrlKey||e.metaKey||e.altKey)&&k==='\\'){ e.preventDefault(); togglePanel('bottom'); return; }
+    if(e.code==='Space'){ S.spaceDown=true; cmpCanvas.style.cursor='grab'; return; }
+    if(k==='a'){ requestCmpFrame(C.idx-1); e.preventDefault(); return; }
+    if(k==='d'){ requestCmpFrame(C.idx+1); e.preventDefault(); return; }
+    if(C.refine.side&&k==='w'){ cycleCmpClass(-1); e.preventDefault(); return; }
+    if(C.refine.side&&k==='s'){ cycleCmpClass(1); e.preventDefault(); return; }
+    if(C.refine.side&&k==='t'){ toggleCmpClassVisibility(); e.preventDefault(); return; }
+    if(C.refine.side&&k==='y'){ toggleCmpAllVisibility(); e.preventDefault(); return; }
+    if(e.key==='Escape'){ closeCompareWorkspace(); return; }
     return;
   }
   if(e.ctrlKey||e.metaKey){
@@ -2660,7 +3545,7 @@ window.addEventListener('keydown',(e)=>{
                 const o=S.objects.get(id); o.bin=new Uint8Array(S.W*S.H); invalidateTint(o); S.dirty=true; render(); } break; }
   }
 });
-window.addEventListener('keyup',(e)=>{ if(e.code==='Space'){ S.spaceDown=false; canvas.style.cursor=S.brush?'none':'crosshair'; } });
+window.addEventListener('keyup',(e)=>{ if(e.code==='Space'){ S.spaceDown=false; canvas.style.cursor=S.brush?'none':'crosshair'; if(C.open) syncCmpCursor(); } });
 
 // ---------- folder browser (server-side directory picker) ----------
 let browseCurrent=null, browseOnSelect=null, browseExts=null;

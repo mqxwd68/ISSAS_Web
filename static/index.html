@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ISSAS — Interactive Annotation</title>
-  <link rel="stylesheet" href="/static/style.css?v=20260813c" />
+  <link rel="stylesheet" href="/static/style.css?v=20260821a" />
 </head>
 <body>
   <!-- ===== Top bar ===== -->
@@ -99,9 +99,10 @@
           <div class="setup-warn mono">Changing classes or model resets the current annotations.</div>
         </div>
       </div>
-      <div class="panel-head">Objects<button id="collapseLeft" class="head-x" title="Hide panel  ([)">✕</button></div>
+      <div class="panel-head"><span id="leftPanelTitle">Objects</span><button id="collapseLeft" class="head-x" title="Hide panel  ([)">✕</button></div>
       <div class="actions">
         <button id="addObjBtn" class="btn btn-accent block">+ Add object</button>
+        <button id="reviewImportBtn" class="btn block hidden">Import mask</button>
         <div class="btn-split">
           <button id="importPromptsBtn" class="btn block">Import prompts</button>
           <button id="importPromptsDirBtn" class="split-side" title="Change prompts folder…" aria-label="Change prompts folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4L11 8.5h8.5A1.5 1.5 0 0 1 21 10v7.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg></button>
@@ -270,7 +271,7 @@
         </div>
       </div>
 
-      <div class="tool-group">
+      <div class="tool-group" id="exportTools">
         <div class="group-label">Export</div>
         <div class="dir-row">
           <input id="pngDir" class="path-input small" placeholder="PNG output dir" spellcheck="false" />
@@ -342,7 +343,7 @@
   <div id="addObj" class="modal hidden">
     <div class="modal-card modal-narrow">
       <div class="modal-head">
-        <span>Add object</span>
+        <span id="addObjTitle">Add object</span>
         <button id="addObjClose" class="hud-btn">✕</button>
       </div>
       <div class="addobj-search">
@@ -471,8 +472,9 @@
       <div class="modal-head">
         <span>Compare masks</span>
         <span style="display:flex; gap:8px; align-items:center; margin-left:auto">
-          <button id="cmpRefineA" class="btn small">Refine A →</button>
-          <button id="cmpRefineB" class="btn small">Refine B →</button>
+          <button id="cmpRefineA" class="btn small" title="Refine A (1)">Refine A · 1</button>
+          <button id="cmpSwapSides" class="hud-btn" title="Swap A and B display positions" aria-label="Swap A and B display positions">⇄</button>
+          <button id="cmpRefineB" class="btn small" title="Refine B (2)">Refine B · 2</button>
           <div class="seg" id="cmpMode"><button data-cm="overlay" class="on">Overlay</button><button data-cm="diff">Diff</button><button data-cm="dual">Dual</button></div>
           <button id="cmpClose" class="hud-btn">✕</button>
         </span>
@@ -486,19 +488,47 @@
         <label class="rcheck" style="white-space:nowrap"><input type="checkbox" id="cmpShowFrame" checked><span>Show frame</span></label>
         <span id="cmpLegend" class="cmp-legend"></span>
       </div>
+      <div id="cmpRefineBar" class="cmp-refine-bar hidden">
+        <span id="cmpRefineStatus" class="cmp-refine-status"></span>
+        <span id="cmpRefineDirty" class="cmp-refine-dirty hidden">Unsaved</span>
+        <span class="cmp-refine-actions">
+          <button id="cmpAddClass" class="btn small" title="Add a class to the selected side">+ Add class</button>
+          <button id="cmpBrush" class="btn small" title="Brush on the selected side">Brush: OFF</button>
+          <input id="cmpBrushSize" class="cmp-brush-size" type="range" min="5" max="120" value="20" title="Brush size" />
+          <button id="cmpApplyGaussian" class="btn small" title="Apply Gaussian post-processing">G</button>
+          <button id="cmpApplyMorph" class="btn small" title="Apply morphology post-processing">F</button>
+          <button id="cmpApplyComponents" class="btn small" title="Keep connected components">H</button>
+          <button id="cmpRefineUndo" class="btn small" title="Undo the last SAM2 refinement" disabled>Undo</button>
+          <button id="cmpRefineRedo" class="btn small" title="Redo the last SAM2 refinement" disabled>Redo</button>
+          <button id="cmpRefineReset" class="btn small" title="Restore this side from its saved mask">Reset</button>
+          <button id="cmpRefineSave" class="btn small btn-accent" title="Save mask and label files" disabled>Save</button>
+        </span>
+      </div>
       <div class="compare-body">
-        <div id="cmpStage" class="cmp-stage"><canvas id="cmpCanvas"></canvas></div>
+        <div id="cmpVisuals" class="cmp-visuals">
+          <div id="cmpStage" class="cmp-stage"><canvas id="cmpCanvas"></canvas></div>
+          <div id="cmpVideoPane" class="cmp-video-pane" aria-label="Review context video"></div>
+        </div>
         <div class="cmp-side">
           <div class="cmp-side-h">
             <label class="cmp-allchk"><input type="checkbox" id="cmpAll" checked><span>All</span></label>
             <span class="cmp-sort" id="cmpSort">
-              <button data-cs="class_name">Name</button><button data-cs="dice" class="on">Dice</button><button data-cs="iou">IoU</button><button data-cs="hd95">HD</button>
+              <button data-cs="class_name">Name</button><button data-cs="dice" class="on">Dice</button><button data-cs="hd">HD</button><button data-cs="sen">SEN</button>
             </span>
           </div>
           <div id="cmpClasses" class="cmp-classes"></div>
         </div>
       </div>
-      <div class="cmp-scores-wrap"><span class="cmp-scores-label">Dice / frame</span><canvas id="cmpScores"></canvas></div>
+      <div class="cmp-scores-wrap">
+        <div class="cmp-scores-tools">
+          <span class="cmp-scores-label">Dice / frame</span>
+          <label>Threshold <input id="cmpScoreThreshold" type="number" min="0" max="1" step="0.01" value="0.90" inputmode="decimal" /></label>
+          <span id="cmpScoreBelow" class="cmp-score-below">0 below</span>
+          <span id="cmpMeanDice" class="cmp-mean-dice">mDice —</span>
+          <button id="cmpScoreRefresh" class="cmp-score-refresh" title="Reload all saved frame scores" aria-label="Reload all saved frame scores">↻</button>
+        </div>
+        <canvas id="cmpScores"></canvas>
+      </div>
       <div class="compare-foot">
         <button id="cmpPrev" class="btn small">⬅ Prev</button>
         <button id="cmpNext" class="btn small">Next ➡</button>
@@ -538,6 +568,18 @@
     </div>
   </div>
 
+  <div id="reviewUnsaved" class="modal hidden">
+    <div class="modal-card modal-narrow">
+      <div class="modal-head"><span>Unsaved Review masks</span></div>
+      <div id="reviewUnsavedBody" class="reminder-body"></div>
+      <div class="reminder-foot">
+        <button id="reviewUnsavedCancel" class="btn">Cancel</button>
+        <button id="reviewUnsavedLeave" class="btn">Leave without saving</button>
+        <button id="reviewUnsavedSave" class="btn btn-accent">Save &amp; continue</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Loading overlay -->
   <div id="overlay" class="overlay hidden">
     <div class="overlay-card">
@@ -550,6 +592,6 @@
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="/static/app.js?v=20260814b"></script>
+  <script src="/static/app.js?v=20260821a"></script>
 </body>
 </html>
