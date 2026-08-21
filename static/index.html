@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ISSAS — Interactive Annotation</title>
-  <link rel="stylesheet" href="/static/style.css?v=20260821a" />
+  <link rel="stylesheet" href="/static/style.css?v=20260821c" />
 </head>
 <body>
   <!-- ===== Top bar ===== -->
@@ -289,7 +289,7 @@
     </aside>
 
     <!-- drag handles sitting in the grid gaps; hidden when their panel is collapsed -->
-    <div id="gutterL" class="gutter" title="Drag to resize · double-click to reset"></div>
+    <div id="gutterL" class="gutter" role="separator" aria-label="Resize classes panel" aria-orientation="vertical" aria-valuemin="170" aria-valuemax="560" tabindex="0" title="Drag to resize · arrow keys resize · double-click to reset"></div>
     <div id="gutterR" class="gutter" title="Drag to resize · double-click to reset"></div>
   </main>
   </div>
@@ -472,9 +472,9 @@
       <div class="modal-head">
         <span>Compare masks</span>
         <span style="display:flex; gap:8px; align-items:center; margin-left:auto">
-          <button id="cmpRefineA" class="btn small" title="Refine A (1)">Refine A · 1</button>
+          <button id="cmpRefineA" class="btn small" title="Refine annotator A">Refine A</button>
           <button id="cmpSwapSides" class="hud-btn" title="Swap A and B display positions" aria-label="Swap A and B display positions">⇄</button>
-          <button id="cmpRefineB" class="btn small" title="Refine B (2)">Refine B · 2</button>
+          <button id="cmpRefineB" class="btn small" title="Refine annotator B">Refine B</button>
           <div class="seg" id="cmpMode"><button data-cm="overlay" class="on">Overlay</button><button data-cm="diff">Diff</button><button data-cm="dual">Dual</button></div>
           <button id="cmpClose" class="hud-btn">✕</button>
         </span>
@@ -506,7 +506,35 @@
       </div>
       <div class="compare-body">
         <div id="cmpVisuals" class="cmp-visuals">
-          <div id="cmpStage" class="cmp-stage"><canvas id="cmpCanvas"></canvas></div>
+          <div id="cmpStage" class="cmp-stage">
+            <canvas id="cmpCanvas"></canvas>
+            <div id="cmpZoomShared" class="zoom-hud cmp-zoom-hud" data-cmp-view="shared" aria-label="Review zoom controls">
+              <button class="hud-btn" data-cmp-zoom="out" title="Zoom out">−</button>
+              <input class="zoom-slider" data-cmp-zoom="slider" type="range" min="10" max="800" value="100" aria-label="Review zoom" />
+              <button class="hud-btn" data-cmp-zoom="in" title="Zoom in">+</button>
+              <span class="mono zoom-label" data-cmp-zoom="label">100%</span>
+              <button class="hud-btn wide" data-cmp-zoom="fit">Fit</button>
+              <button class="hud-btn wide" data-cmp-zoom="actual">100%</button>
+            </div>
+            <div id="cmpZoomA" class="zoom-hud cmp-zoom-hud hidden" data-cmp-view="a" aria-label="Annotator A zoom controls">
+              <span class="cmp-zoom-tag">A</span>
+              <button class="hud-btn" data-cmp-zoom="out" title="Zoom out">−</button>
+              <input class="zoom-slider" data-cmp-zoom="slider" type="range" min="10" max="800" value="100" aria-label="Annotator A zoom" />
+              <button class="hud-btn" data-cmp-zoom="in" title="Zoom in">+</button>
+              <span class="mono zoom-label" data-cmp-zoom="label">100%</span>
+              <button class="hud-btn wide" data-cmp-zoom="fit">Fit</button>
+              <button class="hud-btn wide" data-cmp-zoom="actual">100%</button>
+            </div>
+            <div id="cmpZoomB" class="zoom-hud cmp-zoom-hud hidden" data-cmp-view="b" aria-label="Annotator B zoom controls">
+              <span class="cmp-zoom-tag">B</span>
+              <button class="hud-btn" data-cmp-zoom="out" title="Zoom out">−</button>
+              <input class="zoom-slider" data-cmp-zoom="slider" type="range" min="10" max="800" value="100" aria-label="Annotator B zoom" />
+              <button class="hud-btn" data-cmp-zoom="in" title="Zoom in">+</button>
+              <span class="mono zoom-label" data-cmp-zoom="label">100%</span>
+              <button class="hud-btn wide" data-cmp-zoom="fit">Fit</button>
+              <button class="hud-btn wide" data-cmp-zoom="actual">100%</button>
+            </div>
+          </div>
           <div id="cmpVideoPane" class="cmp-video-pane" aria-label="Review context video"></div>
         </div>
         <div class="cmp-side">
@@ -592,6 +620,6 @@
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="/static/app.js?v=20260821a"></script>
+  <script src="/static/app.js?v=20260821c"></script>
 </body>
 </html>

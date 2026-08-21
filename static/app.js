@@ -1682,6 +1682,7 @@ function applyLayout(persist){
   $('tglLeft').classList.toggle('on',   !Layout.hideL);
   $('tglRight').classList.toggle('on',  !Layout.hideR);
   $('tglBottom').classList.toggle('on', !Layout.hideB);
+  $('gutterL').setAttribute('aria-valuenow',String(Layout.left));
   if(persist!==false) saveLayout();
 }
 function togglePanel(which){
@@ -1721,6 +1722,14 @@ bindGutter($('gutterL'),
   ev=>{ const r=document.querySelector('.workspace').getBoundingClientRect();
         Layout.left = clampi(Math.round(ev.clientX - r.left - 12), LAYOUT_MIN.left, LAYOUT_MAX.left); },
   ()=>{ Layout.left = LAYOUT_DEF.left; });
+$('gutterL').addEventListener('keydown',e=>{
+  if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)) return;
+  e.preventDefault();
+  if(e.key==='Home') Layout.left=LAYOUT_MIN.left;
+  else if(e.key==='End') Layout.left=LAYOUT_MAX.left;
+  else Layout.left=clampi(Layout.left+(e.key==='ArrowLeft'?-12:12),LAYOUT_MIN.left,LAYOUT_MAX.left);
+  applyLayout();
+});
 bindGutter($('gutterR'),
   ev=>{ const r=document.querySelector('.workspace').getBoundingClientRect();
         Layout.right = clampi(Math.round(r.right - ev.clientX - 12), LAYOUT_MIN.right, LAYOUT_MAX.right); },
@@ -2201,14 +2210,17 @@ const C = {open:false, root:null, case:null, a:null, b:null, frames:[], idx:0,
            mode:'overlay', framesDir:'', showFrame:true, w:0, h:0, data:null, img:null,
            displayOrder:['a','b'],
            bins:{}, visible:{a:new Set(),b:new Set()}, knownClasses:new Set(), solo:null, classSort:{key:'dice',dir:-1},
-           view:{scale:1,panX:0,panY:0}, panning:false, panStart:null,
+           view:{scale:1,panX:0,panY:0},
+           dualViews:{a:{scale:1,panX:0,panY:0,initialized:false},b:{scale:1,panX:0,panY:0,initialized:false}},
+           viewSize:null, panning:false, panStart:null,
            layer:null, layerA:null, layerB:null, scores:[], scoreHover:null, scoreThreshold:.9, scoreRefreshBusy:false,
            panelState:null, pendingNav:null,
            refine:{side:null, selectedClassId:null, readyDir:null, sourceNames:[], busy:false,
                    prompts:new Map(), promptSeeds:new Map(), drafts:new Map(),
                    io:{a:{importDir:null,saveDir:null},b:{importDir:null,saveDir:null}},
                    brush:false, brushSize:20, brushing:false, brushPositive:true, brushLast:null, brushBefore:null,
-                   brushCursor:null, brushRenderPending:false, pendingPoints:[], flash:null,
+                   brushCursor:null, brushRenderPending:false, brushTrail:null, brushBaseLayers:null, pendingPoints:[], flash:null,
+                   activeSamObjId:null, metricTimers:new Map(), metricVersions:new Map(),
                    editors:{a:{classId:null,history:new Map(),future:new Map()},
                             b:{classId:null,history:new Map(),future:new Map()}}}};
 const cmpCanvas=$('cmpCanvas'); const cctx=cmpCanvas.getContext('2d');
@@ -2230,6 +2242,19 @@ $('reviewCompareBtn').addEventListener('click', openCompare);
 $('cmpRefineA').addEventListener('click',()=>startCmpRefine('a'));
 $('cmpRefineB').addEventListener('click',()=>startCmpRefine('b'));
 $('cmpSwapSides').addEventListener('click',swapCmpDisplaySides);
+document.querySelectorAll('.cmp-zoom-hud').forEach(bar=>{
+  const side=bar.dataset.cmpView==='shared'?null:bar.dataset.cmpView;
+  bar.querySelector('[data-cmp-zoom="slider"]').addEventListener('input',e=>setCmpZoom(+e.target.value/100,side));
+  bar.addEventListener('click',e=>{
+    const action=e.target.closest('[data-cmp-zoom]')?.dataset.cmpZoom;
+    if(!action||action==='slider') return;
+    const view=cmpZoomView(side);
+    if(action==='out') setCmpZoom(view.scale/1.2,side);
+    else if(action==='in') setCmpZoom(view.scale*1.2,side);
+    else if(action==='fit') fitCmp(side);
+    else if(action==='actual') setCmpZoom(1,side);
+  });
+});
 $('cmpAddClass').addEventListener('click',()=>openAddObj('review'));
 $('reviewImportBtn').addEventListener('click',()=>importCmpMasks());
 $('cmpBrush').addEventListener('click',()=>{
@@ -2282,9 +2307,9 @@ $('cmpScoreThreshold').addEventListener('change',e=>{
   C.scoreThreshold=threshold; e.target.value=threshold.toFixed(2); drawScores();
 });
 $('cmpScoreRefresh').addEventListener('click',refreshCmpScoresFromDisk);
-$('cmpA').addEventListener('change',async()=>{ const next=$('cmpA').value, side=C.refine.side||'a'; $('cmpA').value=C.a; if(!await guardCmpUnsaved()) return; stopCmpRefine(); C.a=next; C.refine.readyDir=null; $('cmpA').value=next; loadCmpIoPaths(); await setCompareFramesDir(); await reloadCmpFrames(); await startCmpRefine(side); });
-$('cmpB').addEventListener('change',async()=>{ const next=$('cmpB').value, side=C.refine.side||'a'; $('cmpB').value=C.b; if(!await guardCmpUnsaved()) return; stopCmpRefine(); C.b=next; C.refine.readyDir=null; $('cmpB').value=next; loadCmpIoPaths(); await setCompareFramesDir(); await reloadCmpFrames(); await startCmpRefine(side); });
-segBind('cmpMode','cm',v=>{ C.mode=v; syncCmpVideoLayout(); compareResize(); buildCmpLayers(); cmpRender(); updateLegend(); });
+$('cmpA').addEventListener('change',async()=>{ const next=$('cmpA').value, side=C.refine.side||'a'; $('cmpA').value=C.a; if(!await guardCmpUnsaved()) return; stopCmpRefine(); C.a=next; C.refine.readyDir=null; $('cmpA').value=next; syncCmpSideControls(); loadCmpIoPaths(); await setCompareFramesDir(); await reloadCmpFrames(); await startCmpRefine(side); });
+$('cmpB').addEventListener('change',async()=>{ const next=$('cmpB').value, side=C.refine.side||'a'; $('cmpB').value=C.b; if(!await guardCmpUnsaved()) return; stopCmpRefine(); C.b=next; C.refine.readyDir=null; $('cmpB').value=next; syncCmpSideControls(); loadCmpIoPaths(); await setCompareFramesDir(); await reloadCmpFrames(); await startCmpRefine(side); });
+segBind('cmpMode','cm',v=>{ C.mode=v; syncCmpVideoLayout(); compareResize(); if(C.data) fitCmp(); buildCmpLayers(); cmpRender(); updateLegend(); });
 $('cmpSort').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
   const key=b.dataset.cs;
   if(C.classSort.key===key){ C.classSort.dir*=-1; }
@@ -2302,6 +2327,11 @@ function cmpRefineAnn(side=C.refine.side){ return side==='a'?C.a:C.b; }
 function cmpDisplaySide(position){ return C.displayOrder[position]; }
 function cmpDisplayPosition(side){ return C.displayOrder.indexOf(side); }
 function syncCmpSideControls(){
+  for(const side of ['a','b']){
+    const label=side.toUpperCase(), ann=cmpRefineAnn(side)||'—', button=$(`cmpRefine${label}`);
+    button.textContent=`Refine ${label} · ${ann}`;
+    button.title=`Refine ${label} · ${ann}`;
+  }
   const swap=$('cmpSwapSides'), parent=swap.parentElement;
   const first=$(`cmpRefine${cmpDisplaySide(0).toUpperCase()}`);
   const second=$(`cmpRefine${cmpDisplaySide(1).toUpperCase()}`);
@@ -2309,7 +2339,7 @@ function syncCmpSideControls(){
 }
 function swapCmpDisplaySides(){
   C.displayOrder=[C.displayOrder[1],C.displayOrder[0]];
-  syncCmpSideControls(); buildCmpLayers(); renderCmpClasses(); cmpRender(); updateLegend();
+  syncCmpSideControls(); syncCmpZoomUI(); buildCmpLayers(); renderCmpClasses(); cmpRender(); updateLegend();
 }
 function cmpEditor(side=C.refine.side){ return C.refine.editors[side]; }
 function cmpClassId(side=C.refine.side){ return C.refine.selectedClassId??cmpEditor(side)?.classId??null; }
@@ -2323,6 +2353,9 @@ function cmpPromptKey(cid, side=C.refine.side, frame=C.frames[C.idx]){ return `$
 function cmpPromptSeedKey(cid, side=C.refine.side, frame=C.frames[C.idx]){ return cmpPromptKey(cid,side,frame); }
 function invalidateCmpPromptSeed(side,cid,frame=C.frames[C.idx]){
   C.refine.promptSeeds.delete(cmpPromptSeedKey(cid,side,frame));
+  // A manual mask change makes the predictor's retained logits stale. The
+  // next point will reset the decoder and seed it from the edited mask.
+  C.refine.activeSamObjId=null;
 }
 function cmpStack(kind,side=C.refine.side,frame=C.frames[C.idx]){
   const map=cmpEditor(side)[kind], key=cmpDraftKey(side,frame);
@@ -2444,12 +2477,13 @@ function updateCmpRefineUI(){
   $('cmpRefineBar').classList.toggle('hidden',!C.open);
   $('cmpRefineA').classList.toggle('on',C.refine.side==='a');
   $('cmpRefineB').classList.toggle('on',C.refine.side==='b');
+  syncCmpZoomUI();
   cmpCanvas.classList.toggle('refining',active);
   syncCmpCursor();
   if(C.open) $('addObjBtn').disabled=!active||C.refine.busy;
   if(!active) return;
   const cl=C.data&&C.data.classes.find(x=>x.class_id===cmpClassId());
-  $('cmpRefineStatus').textContent=`${ann} · ${cl?cl.class_name:'Select a class'} · ${C.frames[C.idx]||''} · SAM2 shared`;
+  $('cmpRefineStatus').textContent=`${ann} · ${cl?cl.class_name:'Select a class'} · ${C.frames[C.idx]||''} · ${C.refine.busy?'SAM2 updating mask…':'SAM2 shared'}`;
   const dirty=C.refine.drafts.has(cmpDraftKey());
   $('cmpRefineDirty').classList.toggle('hidden',!dirty);
   $('cmpRefineSave').disabled=!dirty||C.refine.busy;
@@ -2459,10 +2493,12 @@ function updateCmpRefineUI(){
   $('cmpRefineReset').disabled=C.refine.busy;
 }
 async function startCmpRefine(side){
-  if(C.refine.busy) return;
   if(!C.framesDir) C.framesDir=$('cmpFramesDir').value.trim();
   if(!C.framesDir){ toast('Set the frames folder before refining','err'); return; }
   if(!C.data){ toast('Load a comparison frame before refining','err'); return; }
+  // Selecting A/B is a UI action and must remain available while SAM2 is
+  // finishing a request for the other side. The in-flight result retains its
+  // explicit side/class identifiers and can safely finish in the background.
   C.refine.side=side;
   const editor=cmpEditor(side);
   const selected=C.data.classes.some(x=>x.class_id===C.refine.selectedClassId)
@@ -2471,6 +2507,9 @@ async function startCmpRefine(side){
   if(editor.classId!=null) C.visible[side].add(editor.classId);
   updateCmpRefineUI(); renderCmpClasses(); cmpRender();
   if(C.refine.readyDir===C.framesDir) return;
+  // Initialization is shared by A and B. If it is already running, the side
+  // above is still switched immediately and that initialization may finish.
+  if(C.refine.busy) return;
   C.refine.busy=true; updateCmpRefineUI(); showOverlay('Preparing SAM2 for Review refine…');
   const opened=await API.post('/api/open_folder',{path:C.framesDir});
   if(!opened.ok){ C.refine.busy=false; stopCmpRefine(); hideOverlay(); toast(opened.j.detail||'Could not open frames','err'); return; }
@@ -2478,6 +2517,7 @@ async function startCmpRefine(side){
   const initialized=await API.post('/api/init',{}); hideOverlay();
   C.refine.busy=false;
   if(!initialized.ok){ stopCmpRefine(); toast(initialized.j.detail||'SAM2 initialization failed','err'); return; }
+  C.refine.activeSamObjId=null;
   C.refine.readyDir=C.framesDir; C.refine.sourceNames=opened.j.names||[];
   updateCmpRefineUI();
   toast(`Refining ${cmpRefineAnn()} in Review · shared SAM2 model`,'ok');
@@ -2487,7 +2527,9 @@ async function startCmpRefine(side){
 }
 function stopCmpRefine(){
   C.refine.side=null; C.refine.busy=false; C.refine.brush=false; C.refine.brushing=false;
-  C.refine.brushCursor=null; C.refine.pendingPoints=[];
+  C.refine.brushCursor=null; C.refine.brushTrail=null; C.refine.brushBaseLayers=null; C.refine.pendingPoints=[]; C.refine.activeSamObjId=null;
+  for(const timer of C.refine.metricTimers.values()) clearTimeout(timer);
+  C.refine.metricTimers.clear();
   $('cmpBrush').textContent='Brush: OFF'; $('cmpBrush').classList.remove('on'); cmpCanvas.classList.remove('cmp-brushing');
   $('brushBtn').textContent='Brush: OFF'; $('brushBtn').classList.remove('on');
   updateCmpRefineUI(); if(C.data){ renderCmpClasses(); cmpRender(); }
@@ -2542,23 +2584,34 @@ async function applyCmpPostprocess(op){
   const response=await API.post('/api/postprocess',body); C.refine.busy=false;
   if(!response.ok){ updateCmpRefineUI(); toast(response.j.detail||'postprocess failed','err'); return; }
   const after=await pngB64ToBinWH(response.j.mask,C.w,C.h); item[side]=after; cmpMaskHistory(side,cid,before,after);
-  await refreshCmpLiveMetrics(cid); buildCmpLayers(); renderCmpClasses(); cmpRender(); drawScores(); updateCmpRefineUI(); toast(op+' applied','ok');
+  buildCmpLayers(); renderCmpClasses(); cmpRender(); updateCmpRefineUI();
+  scheduleCmpLiveMetrics(cid); toast(op+' applied','ok');
 }
 function paintCmpCircle(ix,iy,add){
-  const side=C.refine.side, cid=cmpClassId(side), item=cid==null?null:C.bins[cid]; if(!item) return;
-  const bin=item[side], r=Math.floor(C.refine.brushSize/2), {w,h}=C;
-  const x0=clampi(Math.floor(ix-r),0,w-1), x1=clampi(Math.ceil(ix+r),0,w-1);
-  const y0=clampi(Math.floor(iy-r),0,h-1), y1=clampi(Math.ceil(iy+r),0,h-1);
-  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){ const dx=x-ix,dy=y-iy; if(dx*dx+dy*dy<=r*r) bin[y*w+x]=add?1:0; }
+  paintCmpLine(ix,iy,ix,iy,add);
 }
-function paintCmpLine(x0,y0,x1,y1,add){ const d=Math.max(1,Math.hypot(x1-x0,y1-y0)); const steps=Math.max(2,Math.round(d)); for(let i=0;i<steps;i++){ const t=i/(steps-1); paintCmpCircle(x0+t*(x1-x0),y0+t*(y1-y0),add); } }
+function paintCmpLine(x0,y0,x1,y1,add){
+  const side=C.refine.side, cid=cmpClassId(side), item=cid==null?null:C.bins[cid]; if(!item) return;
+  const bin=item[side], r=Math.max(.5,C.refine.brushSize/2), {w,h}=C, r2=r*r;
+  const minX=clampi(Math.floor(Math.min(x0,x1)-r),0,w-1), maxX=clampi(Math.ceil(Math.max(x0,x1)+r),0,w-1);
+  const minY=clampi(Math.floor(Math.min(y0,y1)-r),0,h-1), maxY=clampi(Math.ceil(Math.max(y0,y1)+r),0,h-1);
+  const vx=x1-x0, vy=y1-y0, len2=vx*vx+vy*vy;
+  for(let y=minY;y<=maxY;y++) for(let x=minX;x<=maxX;x++){
+    const t=len2?clampi(((x-x0)*vx+(y-y0)*vy)/len2,0,1):0;
+    const dx=x-(x0+t*vx), dy=y-(y0+t*vy);
+    if(dx*dx+dy*dy<=r2) bin[y*w+x]=add?1:0;
+  }
+}
 function scheduleCmpBrushRender(){
   if(C.refine.brushRenderPending) return;
   C.refine.brushRenderPending=true;
   requestAnimationFrame(()=>{
     C.refine.brushRenderPending=false;
     if(!C.open||!C.data) return;
-    buildCmpLayers(); cmpRender();
+    // During a stroke the native masks are updated in memory, while a cheap
+    // screen-space trail supplies immediate feedback. Rebuilding every full
+    // resolution class layer here was the main source of brush jank.
+    cmpRender();
   });
 }
 function classNameForId(cid){
@@ -2589,8 +2642,7 @@ async function addCmpClass(cid,name){
   ensureCmpClass(instanceId, siblingCount?`${name} · ${siblingCount+1}`:name, cid);
   selectCmpClass(instanceId); C.visible[C.refine.side].add(instanceId); C.solo=null;
   buildCmpLayers(); renderCmpClasses(); cmpRender(); updateCmpRefineUI();
-  await refreshCmpLiveMetrics(instanceId);
-  renderCmpClasses(); drawScores(); updateCmpRefineUI();
+  scheduleCmpLiveMetrics(instanceId);
 }
 function cycleCmpClass(dir){
   if(!C.refine.side||!C.data?.classes.length) return;
@@ -2616,8 +2668,8 @@ async function deleteCmpClassMask(side,cid){
   if(!C.bins[cid]||C.refine.busy) return;
   const before=C.bins[cid][side].slice(0), after=new Uint8Array(C.w*C.h);
   if(!before.some(Boolean)) return;
-  C.bins[cid][side]=after; cmpMaskHistory(side,cid,before,after,C.refine.side||side); await refreshCmpLiveMetrics(cid);
-  buildCmpLayers(); renderCmpClasses(); cmpRender(); drawScores(); updateCmpRefineUI();
+  C.bins[cid][side]=after; cmpMaskHistory(side,cid,before,after,C.refine.side||side);
+  buildCmpLayers(); renderCmpClasses(); cmpRender(); updateCmpRefineUI(); scheduleCmpLiveMetrics(cid);
 }
 async function deleteCmpClass(side,cid){
   if(side==='all'){ await deleteCmpClassMask('a',cid); await deleteCmpClassMask('b',cid); }
@@ -2631,31 +2683,42 @@ async function deleteCmpClass(side,cid){
   }
 }
 function runNextCmpRefinePoint(){
-  const next=C.refine.pendingPoints[0];
-  if(next) runCmpRefinePoint(next.point,next.side,next.cid,true);
+  if(C.refine.busy) return;
+  while(C.refine.pendingPoints.length&&C.refine.pendingPoints[0].frame!==C.frames[C.idx]) C.refine.pendingPoints.shift();
+  const next=C.refine.pendingPoints.shift(); if(!next) return;
+  const batch=[next.point];
+  // Coalesce clicks made while SAM2 was busy. One decoder call with the full
+  // point set gives the same final constraints without forcing the user to
+  // wait for a separate inference round-trip per click.
+  const keep=[];
+  for(const item of C.refine.pendingPoints){
+    if(item.side===next.side&&item.cid===next.cid&&item.frame===next.frame) batch.push(item.point);
+    else keep.push(item);
+  }
+  C.refine.pendingPoints=keep;
+  runCmpRefinePoint(batch,next.side,next.cid);
 }
-async function runCmpRefinePoint(point,requestedSide=C.refine.side,requestedCid=cmpClassId(requestedSide),queued=false){
+async function runCmpRefinePoint(point,requestedSide=C.refine.side,requestedCid=cmpClassId(requestedSide)){
   const side=requestedSide, cid=requestedCid;
   if(cid==null||!side) return;
+  const incoming=Array.isArray(point)?point:[point];
   if(C.refine.busy){
-    C.refine.pendingPoints.push({point:{...point},side,cid,frame:C.frames[C.idx]});
+    for(const next of incoming) C.refine.pendingPoints.push({point:{...next},side,cid,frame:C.frames[C.idx]});
     cmpRender();
     return;
   }
-  const queuedItem=queued?C.refine.pendingPoints[0]:null;
-  if(queuedItem&&queuedItem.frame&&queuedItem.frame!==C.frames[C.idx]){
-    C.refine.pendingPoints.shift(); runNextCmpRefinePoint(); return;
-  }
   const frameIdx=cmpFrameSourceIndex();
   if(frameIdx<0){
-    if(queuedItem===C.refine.pendingPoints[0]) C.refine.pendingPoints.shift();
     toast(`Frame ${C.frames[C.idx]} is not in the selected images folder`,'err');
     runNextCmpRefinePoint();
     return;
   }
-  const key=cmpPromptKey(cid), points=C.refine.prompts.get(key)||[];
-  const seedKey=cmpPromptSeedKey(cid,side), hasSeed=C.refine.promptSeeds.has(seedKey);
-  const beforePoints=points.map(p=>({...p})); points.push(point); C.refine.prompts.set(key,points);
+  // Use the side captured when the click occurred. The operator may switch
+  // A/B while this request is running, so defaults based on the current UI
+  // side would otherwise write prompts into the wrong annotator.
+  const key=cmpPromptKey(cid,side), points=C.refine.prompts.get(key)||[];
+  const seedKey=cmpPromptSeedKey(cid,side);
+  const beforePoints=points.map(p=>({...p})); points.push(...incoming.map(p=>({...p}))); C.refine.prompts.set(key,points);
   const target=C.bins[cid][side], before=target.slice(0);
   const oldDraft=C.refine.drafts.get(cmpDraftKey(side));
   const hadDraft=!!oldDraft&&oldDraft.has(cid), beforeDraft=hadDraft?oldDraft.get(cid).slice(0):null;
@@ -2663,32 +2726,59 @@ async function runCmpRefinePoint(point,requestedSide=C.refine.side,requestedCid=
   // SAM2 keeps one prompt/logit state per object. Include frame in the id so
   // switching frames cannot accidentally reuse another frame's decoder state.
   const objId=cid*1000000+(C.idx+1)*100+(side==='a'?1:2);
-  const response=await API.post('/api/predict',{frame_idx:frameIdx,obj_id:objId,
-    // Match Annotation mode: resend the complete prompt set on every click.
-    // SAM2 clears the old point tensor and rebuilds it while retaining the
-    // previous mask logits, so positive/negative constraints stay consistent.
-    points:points.map(p=>[p.x,p.y]),labels:points.map(p=>p.label),box:null,
-    seed_mask:!hasSeed&&before.some(Boolean)?binToPngB64WH(before,C.w,C.h):null});
-  if(!response.ok){
-    C.refine.busy=false; C.refine.prompts.set(key,beforePoints);
-    if(queuedItem===C.refine.pendingPoints[0]) C.refine.pendingPoints.shift();
-    updateCmpRefineUI(); cmpRender(); toast(response.j.detail||'SAM2 refine failed','err'); runNextCmpRefinePoint(); return;
+  const resetState=C.refine.activeSamObjId!==objId;
+  let response, after;
+  try{
+    response=await API.post('/api/predict',{frame_idx:frameIdx,obj_id:objId,
+      // Match Annotation mode: resend the complete prompt set on every click.
+      // SAM2 clears the old point tensor and rebuilds it while retaining the
+      // previous mask logits, so positive/negative constraints stay consistent.
+      points:points.map(p=>[p.x,p.y]),labels:points.map(p=>p.label),box:null,
+      seed_mask:resetState&&before.some(Boolean)?binToPngB64WH(before,C.w,C.h):null,
+      reset_state:resetState});
+    if(!response.ok) throw new Error(response.j.detail||'SAM2 refine failed');
+    after=await pngB64ToBinWH(response.j.mask,C.w,C.h);
+  }catch(err){
+    C.refine.busy=false; C.refine.activeSamObjId=null; C.refine.prompts.set(key,beforePoints);
+    updateCmpRefineUI(); cmpRender(); toast(err?.message||'SAM2 refine failed','err'); runNextCmpRefinePoint(); return;
   }
-  const after=await pngB64ToBinWH(response.j.mask,C.w,C.h), afterPoints=points.map(p=>({...p}));
-  if(!hasSeed&&before.some(Boolean)) C.refine.promptSeeds.set(seedKey,true);
+  const afterPoints=points.map(p=>({...p}));
+  C.refine.activeSamObjId=objId;
+  if(resetState&&before.some(Boolean)) C.refine.promptSeeds.set(seedKey,true);
   C.bins[cid][side]=after;
   let draft=C.refine.drafts.get(cmpDraftKey(side));
   if(!draft){ draft=new Map(); C.refine.drafts.set(cmpDraftKey(side),draft); }
   draft.set(cid,after.slice(0));
   cmpStack('history',side).push({side,frame:C.frames[C.idx],cid,before,after:after.slice(0),beforePoints,afterPoints,hadDraft,beforeDraft});
   cmpStack('future',side).length=0;
-  await refreshCmpLiveMetrics(cid);
   C.refine.busy=false;
-  if(queuedItem===C.refine.pendingPoints[0]) C.refine.pendingPoints.shift();
-  buildCmpLayers(); renderCmpClasses(); cmpRender(); updateCmpRefineUI(); drawScores();
+  // Show the SAM2 mask before distance metrics (especially HD/HD95) run.
+  buildCmpLayers(); renderCmpClasses(); cmpRender(); updateCmpRefineUI();
+  scheduleCmpLiveMetrics(cid);
   runNextCmpRefinePoint();
 }
-async function refreshCmpLiveMetrics(cid){
+function scheduleCmpLiveMetrics(cid,delay=220){
+  const base=cmpBaseClassId(cid), frame=C.frames[C.idx];
+  const key=`${C.root}\n${C.case}\n${frame}\n${base}`;
+  const version=(C.refine.metricVersions.get(key)||0)+1;
+  C.refine.metricVersions.set(key,version);
+  clearTimeout(C.refine.metricTimers.get(key));
+  const run=async()=>{
+    if(C.frames[C.idx]!==frame||C.refine.metricVersions.get(key)!==version){
+      C.refine.metricTimers.delete(key); return;
+    }
+    // Metrics include PNG encoding and Hausdorff distance. Keep that work out
+    // of the critical path while point prompts are still arriving.
+    if(C.refine.busy||C.refine.pendingPoints.length){
+      C.refine.metricTimers.set(key,setTimeout(run,delay)); return;
+    }
+    C.refine.metricTimers.delete(key);
+    const applied=await refreshCmpLiveMetrics(cid,{key,version,frame});
+    if(applied){ renderCmpClasses(); drawScores(); updateCmpRefineUI(); }
+  };
+  C.refine.metricTimers.set(key,setTimeout(run,delay));
+}
+async function refreshCmpLiveMetrics(cid,guard=null){
   const item=C.bins[cid]; if(!item) return;
   const base=cmpBaseClassId(cid);
   const siblingEntries=Object.entries(C.bins).filter(([instanceId])=>cmpBaseClassId(instanceId)===base);
@@ -2698,7 +2788,8 @@ async function refreshCmpLiveMetrics(cid){
   }
   const response=await API.post('/api/review/live_metrics',{
     mask_a:binToPngB64WH(union.a,C.w,C.h),mask_b:binToPngB64WH(union.b,C.w,C.h)});
-  if(!response.ok) return;
+  if(!response.ok) return false;
+  if(guard&&(C.refine.metricVersions.get(guard.key)!==guard.version||C.frames[C.idx]!==guard.frame)) return false;
   // Every button is an independent instance, but agreement belongs to the
   // semantic class. Write the union metrics back to every instance record,
   // including the records used directly by renderCmpClasses().
@@ -2712,6 +2803,7 @@ async function refreshCmpLiveMetrics(cid){
   const score=C.scores.find(x=>x.frame===C.frames[C.idx]);
   if(score) score.dice=vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10000)/10000:null;
   updateReviewLiveRow(base,response.j,union.a.some(Boolean)!==union.b.some(Boolean));
+  return true;
 }
 function reviewMean(values){ values=values.filter(v=>v!=null); return values.length?Math.round(values.reduce((a,b)=>a+b,0)/values.length*10000)/10000:null; }
 function reviewAggLive(rows){
@@ -2809,6 +2901,7 @@ async function openCompare(){
   const sel=R.data.annotators;
   C.a=sel[0]; C.b=sel[1]||withCase.find(x=>x!==sel[0])||sel[0];
   $('cmpA').value=C.a; $('cmpB').value=C.b;
+  syncCmpSideControls();
   loadCmpIoPaths();
   C.open=true; enterCompareWorkspace();
   // default frames folder for this case, so the background shows without extra steps
@@ -2817,7 +2910,7 @@ async function openCompare(){
   const stage=$('cmpStage');
   if(!stage._resizeInit){
     new ResizeObserver(()=>{
-      if(C.open){ compareResize(); if(C.data&&C.mode!=='dual') fitCmp(); cmpRender(); drawScores(); }
+      if(C.open){ compareResize(); cmpRender(); drawScores(); }
     }).observe(stage);
     stage._resizeInit=true;
   }
@@ -2886,8 +2979,10 @@ async function refreshCmpScoresFromDisk(){
 }
 async function loadCmpFrame(i){
   if(!C.frames.length) return;
+  const previousFrame=C.frames[C.idx];
   C.idx=clampi(i,0,C.frames.length-1);
   const frame=C.frames[C.idx];
+  if(frame!==previousFrame) C.refine.activeSamObjId=null;
   if(V.compare){ V.sourceFrames=C.frames; positionContextVideo(C.idx,false); }
   const {ok,j}=await API.post('/api/review/frame_compare',{root:C.root, case:C.case, ann_a:C.a, ann_b:C.b, frame});
   if(!ok){ toast(j.detail||'compare failed','err'); return; }
@@ -3001,31 +3096,38 @@ scoresCanvas.addEventListener('mouseleave',()=>{ if(C.scoreHover!=null){ C.score
 
 // image serving via GET with query — add a tiny fetch-based loader since web_fetch not used here
 function pngB64ToBinWH(b64,w,h){
-  return new Promise(res=>{ const im=new Image(); im.onload=()=>{ const c=document.createElement('canvas'); c.width=w;c.height=h; const cx=c.getContext('2d'); cx.drawImage(im,0,0,w,h); const d=cx.getImageData(0,0,w,h).data; const bin=new Uint8Array(w*h); for(let i=0,p=0;i<bin.length;i++,p+=4) bin[i]=d[p]>127?1:0; res(bin); }; im.src='data:image/png;base64,'+b64; });
+  return new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>{ try{ const c=document.createElement('canvas'); c.width=w;c.height=h; const cx=c.getContext('2d'); cx.drawImage(im,0,0,w,h); const d=cx.getImageData(0,0,w,h).data; const bin=new Uint8Array(w*h); for(let i=0,p=0;i<bin.length;i++,p+=4) bin[i]=d[p]>127?1:0; res(bin); }catch(err){ rej(err); } }; im.onerror=()=>rej(new Error('Invalid mask image returned by server')); im.src='data:image/png;base64,'+b64; });
 }
-function visClasses(side){ return Object.keys(C.bins).map(Number).filter(cid=>C.solo!=null?cid===C.solo:C.visible[side].has(cid)); }
+function visClasses(side,exclude=null){
+  return Object.keys(C.bins).map(Number).filter(cid=>
+    (C.solo!=null?cid===C.solo:C.visible[side].has(cid)) && !(exclude?.side===side&&exclude.cid===cid));
+}
 
 function mkLayer(paint){ const c=document.createElement('canvas'); c.width=C.w; c.height=C.h; const cx=c.getContext('2d'); const im=cx.createImageData(C.w,C.h); paint(im.data); cx.putImageData(im,0,0); return c; }
 function paintFill(d,bin,color,alpha){ for(let i=0,p=0;i<bin.length;i++,p+=4){ if(bin[i]){ d[p]=color[0]; d[p+1]=color[1]; d[p+2]=color[2]; d[p+3]=alpha; } } }
 function paintBoundary(d,bin,color){ const w=C.w,h=C.h; for(let y=0;y<h;y++)for(let x=0;x<w;x++){ const i=y*w+x; if(!bin[i])continue; if(x===0||y===0||x===w-1||y===h-1||!bin[i-1]||!bin[i+1]||!bin[i-w]||!bin[i+w]){ const p=i*4; d[p]=color[0];d[p+1]=color[1];d[p+2]=color[2];d[p+3]=240; } } }
 function paintAnnotationMask(d,bin,color,fillAlpha=115){ paintFill(d,bin,color,fillAlpha); paintBoundary(d,bin,color); }
-function buildCmpLayers(){
-  if(!C.data) return;
-  const visA=visClasses('a'), visB=visClasses('b'), setA=new Set(visA), setB=new Set(visB);
+function makeCmpLayers(exclude=null){
+  if(!C.data) return {layer:null,layerA:null,layerB:null};
+  const visA=visClasses('a',exclude), visB=visClasses('b',exclude), setA=new Set(visA), setB=new Set(visB);
   if(C.mode==='diff'){
     const first=cmpDisplaySide(0), firstOnly=CMP_AONLY, secondOnly=CMP_BONLY;
-    C.layer=mkLayer(d=>{ for(const cid of new Set([...visA,...visB])){ const {a,b}=C.bins[cid]; for(let i=0,p=0;i<a.length;i++,p+=4){ const A=setA.has(cid)&&a[i],B=setB.has(cid)&&b[i], firstHit=first==='a'?A:B, secondHit=first==='a'?B:A; if(A&&B){ d[p]=CMP_AGREE[0];d[p+1]=CMP_AGREE[1];d[p+2]=CMP_AGREE[2];d[p+3]=150; } else if(firstHit){ d[p]=firstOnly[0];d[p+1]=firstOnly[1];d[p+2]=firstOnly[2];d[p+3]=170; } else if(secondHit){ d[p]=secondOnly[0];d[p+1]=secondOnly[1];d[p+2]=secondOnly[2];d[p+3]=170; } } } });
+    const layer=mkLayer(d=>{ for(const cid of new Set([...visA,...visB])){ const {a,b}=C.bins[cid]; for(let i=0,p=0;i<a.length;i++,p+=4){ const A=setA.has(cid)&&a[i],B=setB.has(cid)&&b[i], firstHit=first==='a'?A:B, secondHit=first==='a'?B:A; if(A&&B){ d[p]=CMP_AGREE[0];d[p+1]=CMP_AGREE[1];d[p+2]=CMP_AGREE[2];d[p+3]=150; } else if(firstHit){ d[p]=firstOnly[0];d[p+1]=firstOnly[1];d[p+2]=firstOnly[2];d[p+3]=170; } else if(secondHit){ d[p]=secondOnly[0];d[p+1]=secondOnly[1];d[p+2]=secondOnly[2];d[p+3]=170; } } } });
+    return {layer,layerA:null,layerB:null};
   } else if(C.mode==='overlay'){
     const front=cmpDisplaySide(0), back=cmpDisplaySide(1);
-    C.layer=mkLayer(d=>{
-      for(const cid of visClasses(front)){ const bin=C.bins[cid][front]; paintAnnotationMask(d,bin,C.bins[cid].color,115); }
-      for(const cid of visClasses(back)){ const bin=C.bins[cid][back]; paintBoundary(d,bin,C.bins[cid].color); }
+    const layer=mkLayer(d=>{
+      for(const cid of visClasses(front,exclude)){ const bin=C.bins[cid][front]; paintAnnotationMask(d,bin,C.bins[cid].color,115); }
+      for(const cid of visClasses(back,exclude)){ const bin=C.bins[cid][back]; paintBoundary(d,bin,C.bins[cid].color); }
     });
+    return {layer,layerA:null,layerB:null};
   } else { // dual
-    C.layerA=mkLayer(d=>{ for(const cid of visA){ const {a,color}=C.bins[cid]; paintAnnotationMask(d,a,color,115); } });
-    C.layerB=mkLayer(d=>{ for(const cid of visB){ const {b,color}=C.bins[cid]; paintAnnotationMask(d,b,color,115); } });
+    const layerA=mkLayer(d=>{ for(const cid of visA){ const {a,color}=C.bins[cid]; paintAnnotationMask(d,a,color,115); } });
+    const layerB=mkLayer(d=>{ for(const cid of visB){ const {b,color}=C.bins[cid]; paintAnnotationMask(d,b,color,115); } });
+    return {layer:null,layerA,layerB};
   }
 }
+function buildCmpLayers(){ Object.assign(C,makeCmpLayers()); }
 function updateLegend(){
   const L=$('cmpLegend');
   if(C.mode==='diff'){ L.innerHTML=`<span class="lg"><span class="sw" style="background:rgb(${CMP_AGREE})"></span>agree</span><span class="lg"><span class="sw" style="background:rgb(${CMP_AONLY})"></span>${cmpRefineAnn(cmpDisplaySide(0))} only</span><span class="lg"><span class="sw" style="background:rgb(${CMP_BONLY})"></span>${cmpRefineAnn(cmpDisplaySide(1))} only</span>`; }
@@ -3033,13 +3135,69 @@ function updateLegend(){
   else { L.innerHTML=`<span class="lg">left = <b>${cmpRefineAnn(cmpDisplaySide(0))}</b> · right = <b>${cmpRefineAnn(cmpDisplaySide(1))}</b></span>`; }
 }
 function compareResize(){
-  const st=$('cmpStage'); const dp=window.devicePixelRatio||1;
-  cmpCanvas.width=st.clientWidth*dp; cmpCanvas.height=st.clientHeight*dp;
+  const st=$('cmpStage'), vw=st.clientWidth, vh=st.clientHeight, dp=window.devicePixelRatio||1;
+  const old=C.viewSize;
+  if(old&&C.data){
+    if(C.mode==='dual'){
+      const oldPw=old[0]/2, newPw=vw/2;
+      for(const side of ['a','b']){
+        const view=C.dualViews[side]; if(!view.initialized) continue;
+        const ix=(oldPw/2-view.panX)/view.scale, iy=(old[1]/2-view.panY)/view.scale;
+        view.panX=newPw/2-ix*view.scale; view.panY=vh/2-iy*view.scale;
+      }
+    }else{
+      const ix=(old[0]/2-C.view.panX)/C.view.scale, iy=(old[1]/2-C.view.panY)/C.view.scale;
+      C.view.panX=vw/2-ix*C.view.scale; C.view.panY=vh/2-iy*C.view.scale;
+    }
+  }
+  C.viewSize=[vw,vh];
+  cmpCanvas.width=vw*dp; cmpCanvas.height=vh*dp;
   cctx.setTransform(dp,0,0,dp,0,0);
+  syncCmpZoomUI();
 }
-function fitCmp(){
-  const st=$('cmpStage'); const vw=st.clientWidth, vh=st.clientHeight;
-  const s=Math.min((vw-20)/C.w,(vh-20)/C.h); C.view={scale:s, panX:(vw-C.w*s)/2, panY:(vh-C.h*s)/2};
+function cmpZoomView(side=null){ return side?C.dualViews[side]:C.view; }
+function setCmpZoom(newScale,side=null,cx=null,cy=null){
+  if(!C.data||!C.w||!C.h) return;
+  const st=$('cmpStage'), view=cmpZoomView(side);
+  let vw=st.clientWidth, vh=st.clientHeight;
+  if(side) vw/=2;
+  if(cx==null){ cx=vw/2; cy=vh/2; }
+  newScale=clampi(newScale,.1,8);
+  const ix=(cx-view.panX)/view.scale, iy=(cy-view.panY)/view.scale;
+  view.scale=newScale; view.panX=cx-ix*newScale; view.panY=cy-iy*newScale;
+  if(side) view.initialized=true;
+  syncCmpZoomUI(); cmpRender();
+}
+function fitCmp(side=null){
+  if(!C.w||!C.h) return;
+  const st=$('cmpStage'), vh=st.clientHeight;
+  if(C.mode==='dual'){
+    const pw=st.clientWidth/2, targets=side?[side]:['a','b'];
+    for(const target of targets){
+      const s=Math.min((pw-14)/C.w,(vh-24)/C.h), view=C.dualViews[target];
+      view.scale=s; view.panX=(pw-C.w*s)/2; view.panY=(vh-C.h*s)/2; view.initialized=true;
+    }
+  }else{
+    const vw=st.clientWidth, s=Math.min((vw-20)/C.w,(vh-20)/C.h);
+    C.view={scale:s,panX:(vw-C.w*s)/2,panY:(vh-C.h*s)/2};
+  }
+  syncCmpZoomUI(); cmpRender();
+}
+function syncCmpZoomBar(bar,view){
+  const pct=Math.round(view.scale*100);
+  bar.querySelector('[data-cmp-zoom="slider"]').value=clampi(pct,10,800);
+  bar.querySelector('[data-cmp-zoom="label"]').textContent=pct+'%';
+}
+function syncCmpZoomUI(){
+  const dual=C.mode==='dual', shared=$('cmpZoomShared');
+  shared.classList.toggle('hidden',dual); syncCmpZoomBar(shared,C.view);
+  for(const side of ['a','b']){
+    const bar=$(`cmpZoom${side.toUpperCase()}`);
+    bar.classList.toggle('hidden',!dual);
+    bar.style.left=cmpDisplayPosition(side)===0?'12px':'calc(50% + 12px)';
+    bar.classList.toggle('on',C.refine.side===side);
+    syncCmpZoomBar(bar,C.dualViews[side]);
+  }
 }
 function cmpRender(){
   const st=$('cmpStage'); const vw=st.clientWidth, vh=st.clientHeight;
@@ -3052,9 +3210,11 @@ function cmpRender(){
     const left=cmpDisplaySide(0), right=cmpDisplaySide(1);
     drawPanel(0,hw,vh,left==='a'?C.layerA:C.layerB,cmpRefineAnn(left),left);
     drawPanel(hw,hw,vh,right==='a'?C.layerA:C.layerB,cmpRefineAnn(right),right);
+    drawCmpErasePreview();
     cctx.strokeStyle='#232a31'; cctx.lineWidth=1; cctx.beginPath(); cctx.moveTo(hw,0); cctx.lineTo(hw,vh); cctx.stroke();
     drawCmpRefinePoints();
     drawCmpFlash();
+    drawCmpBrushTrail();
     drawCmpBrushCursor();
     return;
   }
@@ -3063,8 +3223,11 @@ function cmpRender(){
   if(showImg){ cctx.imageSmoothingEnabled=true; cctx.drawImage(C.img,0,0,C.w,C.h); }
   cctx.imageSmoothingEnabled=false; cctx.globalAlpha = 1;
   if(C.layer) cctx.drawImage(C.layer,0,0,C.w,C.h);
-  cctx.globalAlpha=1; cctx.restore(); drawCmpRefinePoints();
+  cctx.globalAlpha=1; cctx.restore();
+  drawCmpErasePreview();
+  drawCmpRefinePoints();
   drawCmpFlash();
+  drawCmpBrushTrail();
   drawCmpBrushCursor();
 }
 function drawCmpFlash(){
@@ -3084,7 +3247,8 @@ function drawCmpFlash(){
   cctx.restore(); requestAnimationFrame(()=>{ if(C.refine.flash===f) cmpRender(); });
 }
 function drawPanel(x0,pw,vh,layer,label,side){
-  const s=Math.min((pw-14)/C.w,(vh-24)/C.h); const iw=C.w*s, ih=C.h*s; const ox=x0+(pw-iw)/2, oy=(vh-ih)/2;
+  const g=cmpDualGeometry(side); x0=g.x0; pw=g.pw;
+  const s=g.scale, iw=C.w*s, ih=C.h*s, ox=g.ox, oy=g.oy;
   cctx.save(); cctx.beginPath(); cctx.rect(x0,0,pw,vh); cctx.clip();
   const showImg = C.showFrame && C.img;
   if(showImg){ cctx.imageSmoothingEnabled=true; cctx.drawImage(C.img,ox,oy,iw,ih); }
@@ -3151,14 +3315,18 @@ function renderCmpClasses(){
     box.appendChild(el);
   }
 }
-function cmpRefinePointPosition(x,y){
+function cmpRefinePointPosition(x,y,side=C.refine.side){
   if(C.mode!=='dual') return [C.view.panX+x*C.view.scale,C.view.panY+y*C.view.scale];
-  const g=cmpDualGeometry(C.refine.side); return [g.ox+x*g.scale,g.oy+y*g.scale];
+  const g=cmpDualGeometry(side); return [g.ox+x*g.scale,g.oy+y*g.scale];
 }
 function cmpDualGeometry(side=C.refine.side){
   const st=$('cmpStage'), vw=st.clientWidth, vh=st.clientHeight, pw=vw/2;
-  const x0=cmpDisplayPosition(side)===0?0:pw, scale=Math.min((pw-14)/C.w,(vh-24)/C.h);
-  return {x0,pw,scale,ox:x0+(pw-C.w*scale)/2,oy:(vh-C.h*scale)/2};
+  const x0=cmpDisplayPosition(side)===0?0:pw, view=C.dualViews[side];
+  if(!view.initialized&&C.w&&C.h){
+    view.scale=Math.min((pw-14)/C.w,(vh-24)/C.h);
+    view.panX=(pw-C.w*view.scale)/2; view.panY=(vh-C.h*view.scale)/2; view.initialized=true;
+  }
+  return {x0,pw,scale:view.scale,ox:x0+view.panX,oy:view.panY};
 }
 function drawCmpRefinePoints(){
   const cid=cmpClassId(); if(!C.refine.side||cid==null) return;
@@ -3184,6 +3352,50 @@ function drawCmpBrushCursor(){
   cctx.fillStyle='rgba(255,255,0,.08)'; cctx.fill();
   cctx.strokeStyle='rgba(255,255,0,.95)'; cctx.lineWidth=1.25; cctx.stroke(); cctx.restore();
 }
+function drawCmpBrushTrail(){
+  const trail=C.refine.brushTrail; if(!trail?.points?.length) return;
+  // Negative strokes use a live erasure preview instead of a red paint trace.
+  if(!trail.positive) return;
+  const scale=C.mode==='dual'?cmpDualGeometry(trail.side).scale:C.view.scale;
+  const points=trail.points.map(point=>cmpRefinePointPosition(point.x,point.y,trail.side));
+  const color=C.bins[trail.cid]?.color||[55,229,160];
+  cctx.save(); cctx.lineCap='round'; cctx.lineJoin='round';
+  cctx.lineWidth=Math.max(2,C.refine.brushSize*scale);
+  cctx.strokeStyle=`rgba(${color.join(',')},.72)`;
+  cctx.beginPath(); cctx.moveTo(points[0][0],points[0][1]);
+  for(let i=1;i<points.length;i++) cctx.lineTo(points[i][0],points[i][1]);
+  if(points.length===1) cctx.lineTo(points[0][0]+.01,points[0][1]);
+  cctx.stroke(); cctx.restore();
+}
+function drawCmpErasePreview(){
+  const trail=C.refine.brushTrail, base=C.refine.brushBaseLayers;
+  if(trail?.positive!==false||!trail.points?.length||!base) return;
+  const scale=C.mode==='dual'?cmpDualGeometry(trail.side).scale:C.view.scale;
+  const points=trail.points.map(point=>cmpRefinePointPosition(point.x,point.y,trail.side));
+
+  // Punch the brush path out of the stale composite, then redraw the same
+  // scene without the edited mask behind it. This makes right-drag visually
+  // erase on every animation frame without rebuilding all mask layers.
+  cctx.save(); cctx.globalCompositeOperation='destination-out';
+  cctx.lineCap='round'; cctx.lineJoin='round'; cctx.lineWidth=Math.max(2,C.refine.brushSize*scale);
+  cctx.strokeStyle='#000'; cctx.beginPath(); cctx.moveTo(points[0][0],points[0][1]);
+  for(let i=1;i<points.length;i++) cctx.lineTo(points[i][0],points[i][1]);
+  if(points.length===1) cctx.lineTo(points[0][0]+.01,points[0][1]);
+  cctx.stroke(); cctx.restore();
+
+  cctx.save(); cctx.globalCompositeOperation='destination-over';
+  if(C.mode==='dual'){
+    const st=$('cmpStage'), g=cmpDualGeometry(trail.side);
+    const layer=trail.side==='a'?base.layerA:base.layerB;
+    drawPanel(g.x0,g.pw,st.clientHeight,layer,cmpRefineAnn(trail.side),trail.side);
+  }else{
+    cctx.translate(C.view.panX,C.view.panY); cctx.scale(C.view.scale,C.view.scale);
+    if(C.showFrame&&C.img){ cctx.imageSmoothingEnabled=true; cctx.drawImage(C.img,0,0,C.w,C.h); }
+    cctx.imageSmoothingEnabled=false;
+    if(base.layer) cctx.drawImage(base.layer,0,0,C.w,C.h);
+  }
+  cctx.restore();
+}
 function cmpImagePoint(e){
   const st=$('cmpStage'), rect=st.getBoundingClientRect();
   const sx=(e.clientX-rect.left)*(st.clientWidth/Math.max(1,rect.width));
@@ -3195,33 +3407,75 @@ function cmpImagePoint(e){
   }else{ x=(sx-C.view.panX)/C.view.scale; y=(sy-C.view.panY)/C.view.scale; }
   return x>=0&&y>=0&&x<C.w&&y<C.h?{x,y}:null;
 }
-// zoom/pan for overlay & diff
-cmpCanvas.addEventListener('wheel',e=>{ if(C.mode==='dual'||!C.data) return; e.preventDefault();
-  const r=cmpCanvas.getBoundingClientRect(); const cx=e.clientX-r.left, cy=e.clientY-r.top;
-  if(e.ctrlKey||e.metaKey){ const f=Math.exp(-e.deltaY*0.0015); const ix=(cx-C.view.panX)/C.view.scale, iy=(cy-C.view.panY)/C.view.scale;
-    C.view.scale=clampi(C.view.scale*f,0.1,8); C.view.panX=cx-ix*C.view.scale; C.view.panY=cy-iy*C.view.scale; cmpRender(); }
-  else { C.view.panY-=e.deltaY; C.view.panX-=e.deltaX; cmpRender(); } },{passive:false});
+// Annotation-style navigation: Ctrl/Cmd-wheel zooms at the pointer; a plain
+// wheel pans. In Dual, the panel below the pointer owns its independent view.
+cmpCanvas.addEventListener('wheel',e=>{ if(!C.data) return; e.preventDefault();
+  const r=cmpCanvas.getBoundingClientRect(), cx=e.clientX-r.left, cy=e.clientY-r.top;
+  let side=null, localX=cx;
+  if(C.mode==='dual'){
+    const position=cx<$('cmpStage').clientWidth/2?0:1;
+    side=cmpDisplaySide(position); localX=cx-cmpDualGeometry(side).x0;
+  }
+  const view=cmpZoomView(side);
+  if(e.ctrlKey||e.metaKey) setCmpZoom(view.scale*Math.exp(-e.deltaY*.0015),side,localX,cy);
+  else{
+    if(e.shiftKey) view.panX-=e.deltaY;
+    else { view.panY-=e.deltaY; view.panX-=e.deltaX; }
+    cmpRender();
+  }
+},{passive:false});
 cmpCanvas.addEventListener('contextmenu',e=>e.preventDefault());
 cmpCanvas.addEventListener('mousedown',e=>{
+  if(C.data&&(e.button===1||S.spaceDown)){
+    e.preventDefault();
+    const r=cmpCanvas.getBoundingClientRect(), sx=e.clientX-r.left, sy=e.clientY-r.top;
+    const side=C.mode==='dual'?cmpDisplaySide(sx<$('cmpStage').clientWidth/2?0:1):null;
+    const view=cmpZoomView(side);
+    C.panning=true; C.panStart={x:sx,y:sy,panX:view.panX,panY:view.panY,side};
+    cmpCanvas.style.cursor='grabbing'; return;
+  }
   if(C.refine.side&&C.refine.brush&&e.button!==1){
-    const point=cmpImagePoint(e); if(point){ const cid=cmpClassId(), side=C.refine.side; C.refine.brushCursor=point; C.refine.brushBefore=cid!=null&&C.bins[cid]?C.bins[cid][side].slice(0):null; C.refine.brushing=true; C.refine.brushPositive=e.button===0; C.refine.brushLast=[point.x,point.y]; paintCmpCircle(point.x,point.y,C.refine.brushPositive); scheduleCmpBrushRender(); }
+    const point=cmpImagePoint(e); if(point){
+      e.preventDefault(); const cid=cmpClassId(), side=C.refine.side;
+      C.refine.brushCursor=point; C.refine.brushBefore=cid!=null&&C.bins[cid]?C.bins[cid][side].slice(0):null;
+      C.refine.brushing=true; C.refine.brushPositive=e.button===0; C.refine.brushLast=[point.x,point.y];
+      C.refine.brushTrail={side,cid,positive:C.refine.brushPositive,points:[point]};
+      C.refine.brushBaseLayers=C.refine.brushPositive?null:makeCmpLayers({side,cid});
+      paintCmpCircle(point.x,point.y,C.refine.brushPositive); scheduleCmpBrushRender();
+    }
     return;
   }
   if(C.refine.side&&e.button!==1){ const point=cmpImagePoint(e); if(point){ e.preventDefault(); runCmpRefinePoint({...point,label:e.button===2?0:1}); } return; }
-  if(C.mode==='dual') return; C.panning=true; const r=cmpCanvas.getBoundingClientRect(); C.panStart=[e.clientX-r.left,e.clientY-r.top,C.view.panX,C.view.panY]; cmpCanvas.style.cursor='grabbing'; });
+  if(C.mode==='dual') return;
+  C.panning=true; const r=cmpCanvas.getBoundingClientRect();
+  C.panStart={x:e.clientX-r.left,y:e.clientY-r.top,panX:C.view.panX,panY:C.view.panY,side:null};
+  cmpCanvas.style.cursor='grabbing';
+});
 window.addEventListener('mousemove',e=>{
   if(C.open&&C.refine.side&&C.refine.brush){
     const point=cmpImagePoint(e); C.refine.brushCursor=point;
-    if(C.refine.brushing&&point){ const last=C.refine.brushLast||[point.x,point.y]; paintCmpLine(last[0],last[1],point.x,point.y,C.refine.brushPositive); C.refine.brushLast=[point.x,point.y]; scheduleCmpBrushRender(); }
+    if(C.refine.brushing&&point){
+      const last=C.refine.brushLast||[point.x,point.y]; paintCmpLine(last[0],last[1],point.x,point.y,C.refine.brushPositive);
+      C.refine.brushLast=[point.x,point.y]; C.refine.brushTrail?.points.push(point); scheduleCmpBrushRender();
+    }
     else cmpRender();
     if(C.refine.brushing) return;
   }
-  if(!C.panning) return; const r=cmpCanvas.getBoundingClientRect(); C.view.panX=C.panStart[2]+(e.clientX-r.left-C.panStart[0]); C.view.panY=C.panStart[3]+(e.clientY-r.top-C.panStart[1]); cmpRender();
+  if(!C.panning) return;
+  const r=cmpCanvas.getBoundingClientRect(), view=cmpZoomView(C.panStart.side);
+  view.panX=C.panStart.panX+(e.clientX-r.left-C.panStart.x);
+  view.panY=C.panStart.panY+(e.clientY-r.top-C.panStart.y);
+  cmpRender();
 });
 window.addEventListener('mouseup',()=>{
   if(C.refine.brushing){
     C.refine.brushing=false; C.refine.brushLast=null;
-    const cid=cmpClassId(), side=C.refine.side; if(cid!=null&&side){ const item=C.bins[cid], after=item[side].slice(0), before=C.refine.brushBefore||after.slice(0); cmpMaskHistory(side,cid,before,after); C.refine.brushBefore=null; refreshCmpLiveMetrics(cid).then(()=>{ buildCmpLayers(); renderCmpClasses(); cmpRender(); drawScores(); updateCmpRefineUI(); }); }
+    const cid=cmpClassId(), side=C.refine.side;
+    if(cid!=null&&side){
+      const item=C.bins[cid], after=item[side].slice(0), before=C.refine.brushBefore||after.slice(0);
+      cmpMaskHistory(side,cid,before,after); C.refine.brushBefore=null; C.refine.brushTrail=null; C.refine.brushBaseLayers=null;
+      buildCmpLayers(); renderCmpClasses(); cmpRender(); updateCmpRefineUI(); scheduleCmpLiveMetrics(cid);
+    }else{ C.refine.brushTrail=null; C.refine.brushBaseLayers=null; cmpRender(); }
   }
   if(C.panning){ C.panning=false; syncCmpCursor(); }
 });
@@ -3491,16 +3745,22 @@ window.addEventListener('keydown',(e)=>{
   if(plainKey&&(sizeKey==='x'||sizeKey==='c')&&adjustActiveBrushSize(sizeKey==='x'?-2:2)){
     e.preventDefault(); return;
   }
-  const tag=document.activeElement.tagName;
-  if(tag==='INPUT'||tag==='TEXTAREA') return;
+  const activeEl=document.activeElement, tag=activeEl.tagName;
+  const inputType=(activeEl.type||'').toLowerCase();
+  const textEntry=activeEl.isContentEditable||tag==='TEXTAREA'||
+    (tag==='INPUT'&&!['range','checkbox','radio','button'].includes(inputType));
+  // Range sliders keep keyboard focus after use. They should not disable the
+  // global Review A/B shortcuts; text/number fields still retain normal digit
+  // entry semantics.
+  if(C.open&&!textEntry&&plainKey&&(e.code==='Digit1'||e.code==='Numpad1')){ e.preventDefault(); startCmpRefine('a'); return; }
+  if(C.open&&!textEntry&&plainKey&&(e.code==='Digit2'||e.code==='Numpad2')){ e.preventDefault(); startCmpRefine('b'); return; }
+  if(textEntry) return;
   // when the Compare window is open, A/D drive its frames
   if(C.open){
     const k=e.key.toLowerCase();
     if((e.ctrlKey||e.metaKey)&&k==='s'){ e.preventDefault(); saveCmpRefine(); return; }
     if((e.ctrlKey||e.metaKey)&&k==='z'){ e.preventDefault(); undoCmpRefine(); return; }
     if((e.ctrlKey||e.metaKey)&&k==='y'){ e.preventDefault(); redoCmpRefine(); return; }
-    if(!(e.ctrlKey||e.metaKey||e.altKey)&&e.code==='Digit1'){ e.preventDefault(); startCmpRefine('a'); return; }
-    if(!(e.ctrlKey||e.metaKey||e.altKey)&&e.code==='Digit2'){ e.preventDefault(); startCmpRefine('b'); return; }
     if(!(e.ctrlKey||e.metaKey||e.altKey)&&k==='b'){ e.preventDefault(); $('brushBtn').click(); return; }
     if(!(e.ctrlKey||e.metaKey||e.altKey)&&k==='g'){ e.preventDefault(); applyPP('gaussian'); return; }
     if(!(e.ctrlKey||e.metaKey||e.altKey)&&k==='f'){ e.preventDefault(); applyPP('morph'); return; }

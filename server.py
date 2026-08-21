@@ -707,6 +707,11 @@ class PredictReq(BaseModel):
     labels: List[int] = []
     box: Optional[List[float]] = None
     seed_mask: Optional[str] = None
+    # Review/refine uses one interactive object at a time. Resetting the
+    # decoder state when that object changes prevents stale A/B/class objects
+    # from accumulating and slowing every later click. Annotation leaves this
+    # false so its normal multi-object propagation state is preserved.
+    reset_state: bool = False
 
 
 class PropagateReq(BaseModel):
@@ -1146,6 +1151,11 @@ def frame_meta(idx: int):
 @app.post("/api/predict")
 def predict(req: PredictReq):
     try:
+        if (req.reset_state and SAM2_AVAILABLE and predictor is not None
+                and SESSION.inference_state is not None
+                and hasattr(predictor, "reset_state")):
+            predictor.reset_state(SESSION.inference_state)
+            SESSION.reset_propagation()
         mask = sam_predict(req.frame_idx, req.obj_id, req.points, req.labels,
                            req.box, req.seed_mask)
         return {"obj_id": req.obj_id, "mask": mask_to_b64(mask)}
